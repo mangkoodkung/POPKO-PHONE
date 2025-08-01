@@ -52,6 +52,13 @@ const CONFIG_DEFAULTS = {
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/json',
+    'text/markdown',
+    'text/csv',
+    'application/rtf',
+    'text/html',
+    'text/xml',
+    'application/xml',
   ],
   documentMaxSize: 50 * 1024 * 1024, // 文档最大50MB
   enableAIReading: true, // 启用AI阅读功能
@@ -330,12 +337,18 @@ class DocumentProcessor {
 
   async processDocument(file) {
     // 验证文件
-    FileValidator.validate(file, 'document');
+    FileValidator.validateDocument(file);
 
     let content = '';
 
     switch (file.type) {
       case 'text/plain':
+      case 'text/markdown':
+      case 'text/csv':
+      case 'text/html':
+      case 'text/xml':
+      case 'application/xml':
+      case 'application/rtf':
         content = await this.readTextFile(file);
         break;
       case 'application/pdf':
@@ -343,6 +356,10 @@ class DocumentProcessor {
         break;
       case 'application/json':
         content = await this.readJSONFile(file);
+        break;
+      case 'application/msword':
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        content = await this.readWordFile(file);
         break;
       default:
         throw new Error(`暂不支持的文档类型: ${file.type}`);
@@ -380,6 +397,45 @@ class DocumentProcessor {
     // 注意：这里需要PDF.js库来解析PDF
     // 简化版本，实际使用时需要引入PDF.js
     throw new Error('PDF处理需要额外的库支持，请使用SillyTavern的Data Bank功能');
+  }
+
+  async readWordFile(file) {
+    // Word文档处理
+    // 对于.doc和.docx文件，我们尝试基础的文本提取
+    try {
+      // 首先尝试作为文本文件读取（可能包含一些格式字符）
+      const rawContent = await this.readTextFile(file);
+
+      // 简单的文本清理，移除一些常见的Word格式字符
+      let cleanContent = rawContent
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // 移除控制字符
+        .replace(/\r\n/g, '\n') // 统一换行符
+        .replace(/\n{3,}/g, '\n\n') // 合并多余的空行
+        .trim();
+
+      // 如果内容看起来像是二进制数据（包含太多不可打印字符），提供提示
+      const printableChars = cleanContent.replace(/[^\x20-\x7E\n\t]/g, '').length;
+      const totalChars = cleanContent.length;
+
+      if (totalChars > 0 && printableChars / totalChars < 0.7) {
+        return `[Word文档] ${file.name}
+
+注意：这是一个Word文档文件，当前只能进行基础的文本提取。
+文件大小：${(file.size / 1024).toFixed(2)} KB
+
+建议：
+1. 将Word文档另存为.txt格式后重新上传，以获得更好的文本提取效果
+2. 或者复制文档内容，使用"文字描述"模式发送
+3. 使用SillyTavern的Data Bank功能来处理复杂的Word文档
+
+提取的部分内容：
+${cleanContent.substring(0, 500)}${cleanContent.length > 500 ? '...' : ''}`;
+      }
+
+      return cleanContent || `[Word文档] ${file.name}\n\n文档内容无法直接提取，建议转换为文本格式后重新上传。`;
+    } catch (error) {
+      return `[Word文档] ${file.name}\n\n无法读取Word文档内容。建议：\n1. 将文档另存为.txt格式\n2. 或复制内容使用文字描述模式\n\n错误信息：${error.message}`;
+    }
   }
 }
 
