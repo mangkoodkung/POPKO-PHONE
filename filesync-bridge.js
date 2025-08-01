@@ -1,278 +1,218 @@
 /**
- * SillyTavern 智能图像处理插件
- * 提供图像上传、压缩、优化和管理功能
+ * Visual Bridge - SillyTavern Extension
+ * 作者: kencuo
+ * 版本: 1.2.0
+ * 功能: 智能视觉文件桥接器，提供高效的图像处理和存储解决方案
+ * GitHub: https://github.com/kencuo/chajian
  *
- * @author AI Assistant
- * @version 1.0.0
- * @requires SillyTavern >= 1.10.0
+ * 特色功能：
+ * - 自适应图像优化
+ * - 智能存储管理
+ * - 多格式支持
+ * - 性能监控
+ * - 直接保存模式
+ * - 智能压缩处理
  */
 
-import { saveSettingsDebounced } from '../../../script.js';
-import { event_types, eventSource } from '../../event-source.js';
-import { getContext } from '../../extensions.js';
-import { getBase64Async, uuidv4 } from '../../utils.js';
+// 导入SillyTavern核心模块
+import { saveSettingsDebounced } from '../../../../script.js';
+import { getContext } from '../../../extensions.js';
+import { getBase64Async, uuidv4 } from '../../../utils.js';
 
-// 插件配置
-const MODULE_NAME = 'third-party-image-processor';
-const UPDATE_INTERVAL = 1000;
+// 插件元数据
+const PLUGIN_ID = 'visual-bridge-kencuo';
+const PLUGIN_VERSION = '1.2.0';
+const PLUGIN_AUTHOR = 'kencuo';
 
-// 默认设置
-const defaultSettings = {
-  // 处理模式
-  processingMode: 'direct', // 'direct' = 直接保存, 'compress' = 压缩处理
+// 配置常量
+const CONFIG_DEFAULTS = {
+  active: true,
+  processingMode: 'direct', // 'direct' = 直接保存, 'compress' = 智能压缩
+  optimizationMode: 'smart', // 'smart', 'quality', 'speed'
+  qualityLevel: 85, // 0-100
+  maxDimension: 2048,
+  fileLimit: 20, // MB
+  formatSupport: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  organizationMode: 'hybrid', // 'hybrid', 'chronological', 'character'
+  enableMetrics: true,
+  enableLogging: true,
+  showProcessingInfo: true,
 
-  // 压缩设置（仅在compress模式下使用）
+  // 兼容旧版本设置
   maxWidth: 1920,
   maxHeight: 1080,
   quality: 0.85,
-  compressionMode: 'adaptive', // 'adaptive', 'quality', 'size'
-
-  // 文件限制
-  maxFileSize: 10 * 1024 * 1024, // 10MB
+  compressionMode: 'adaptive',
+  maxFileSize: 10 * 1024 * 1024,
   allowedFormats: ['jpeg', 'jpg', 'png', 'webp', 'gif'],
-
-  // 存储设置
   storagePath: 'user/images',
   useTimestamp: true,
   useUniqueId: true,
-
-  // 高级选项
-  enableWebP: false, // 直接模式下默认关闭WebP转换
-  preserveMetadata: true, // 直接模式下保留元数据
-  autoOptimize: false, // 直接模式下关闭自动优化
-
-  // 调试选项
-  enableLogging: true,
-  showProcessingInfo: true,
+  enableWebP: false,
+  preserveMetadata: true,
+  autoOptimize: false,
 };
 
-// 全局变量
-let extensionSettings = {};
-let isProcessing = false;
-let processingQueue = [];
+// 全局配置管理
+window.extension_settings = window.extension_settings || {};
+window.extension_settings[PLUGIN_ID] = window.extension_settings[PLUGIN_ID] || {};
+const pluginConfig = window.extension_settings[PLUGIN_ID];
+
+// 初始化默认配置
+for (const [key, value] of Object.entries(CONFIG_DEFAULTS)) {
+  if (pluginConfig[key] === undefined) {
+    pluginConfig[key] = value;
+  }
+}
+
+// 全局变量（保留用于兼容性）
 
 /**
- * 图像处理核心类
+ * 图像优化引擎
  */
-class ImageProcessor {
-  constructor(settings) {
-    this.settings = { ...defaultSettings, ...settings };
+class ImageOptimizer {
+  constructor() {
     this.canvas = null;
-    this.ctx = null;
-    this.initCanvas();
+    this.context = null;
+    this.metrics = {
+      processed: 0,
+      totalSaved: 0,
+      avgCompressionRatio: 0,
+    };
   }
 
   /**
-   * 初始化Canvas渲染环境
+   * 初始化画布
    */
   initCanvas() {
-    this.canvas = document.createElement('canvas');
-    this.ctx = this.canvas.getContext('2d');
-    this.log('Canvas渲染环境已初始化');
-  }
-
-  /**
-   * 智能尺寸计算
-   * @param {number} originalWidth 原始宽度
-   * @param {number} originalHeight 原始高度
-   * @returns {Object} 计算后的尺寸
-   */
-  calculateOptimalSize(originalWidth, originalHeight) {
-    const { maxWidth, maxHeight } = this.settings;
-
-    let newWidth = originalWidth;
-    let newHeight = originalHeight;
-
-    // 计算缩放比例
-    const widthRatio = maxWidth / originalWidth;
-    const heightRatio = maxHeight / originalHeight;
-    const ratio = Math.min(widthRatio, heightRatio, 1);
-
-    if (ratio < 1) {
-      newWidth = Math.round(originalWidth * ratio);
-      newHeight = Math.round(originalHeight * ratio);
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+      this.context = this.canvas.getContext('2d');
+      this.log('Canvas渲染环境已初始化');
     }
-
-    this.log(`尺寸优化: ${originalWidth}x${originalHeight} → ${newWidth}x${newHeight}`);
-
-    return { width: newWidth, height: newHeight, ratio };
   }
 
   /**
-   * 文件类型检查
-   * @param {File} file 文件对象
-   * @returns {boolean} 是否为支持的格式
+   * 智能图像处理
    */
-  validateFileType(file) {
-    const fileExtension = file.name.split('.').pop().toLowerCase();
-    const mimeType = file.type.toLowerCase();
+  async optimizeImage(file, options = {}) {
+    this.initCanvas();
 
-    const isValidExtension = this.settings.allowedFormats.includes(fileExtension);
-    const isValidMimeType = mimeType.startsWith('image/');
+    const mode = options.mode || pluginConfig.optimizationMode;
+    const quality = (options.quality || pluginConfig.qualityLevel) / 100;
+    const maxSize = options.maxSize || pluginConfig.maxDimension;
 
-    if (!isValidExtension || !isValidMimeType) {
-      this.log(`不支持的文件格式: ${fileExtension} (${mimeType})`, 'warn');
-      return false;
-    }
+    return new Promise((resolve, reject) => {
+      const image = new Image();
 
-    return true;
-  }
+      image.onload = () => {
+        try {
+          const dimensions = this.calculateOptimalSize(image.width, image.height, maxSize, mode);
 
-  /**
-   * 大小限制验证
-   * @param {File} file 文件对象
-   * @returns {boolean} 是否符合大小限制
-   */
-  validateFileSize(file) {
-    if (file.size > this.settings.maxFileSize) {
-      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-      const limitMB = (this.settings.maxFileSize / 1024 / 1024).toFixed(2);
-      this.log(`文件过大: ${sizeMB}MB > ${limitMB}MB`, 'warn');
-      return false;
-    }
+          this.canvas.width = dimensions.width;
+          this.canvas.height = dimensions.height;
 
-    return true;
-  }
+          // 应用优化算法
+          this.applyOptimization(image, dimensions, mode);
 
-  /**
-   * 唯一ID生成（使用SillyTavern的UUID工具）
-   * @returns {string} 唯一标识符
-   */
-  generateUniqueId() {
-    return `img_${Date.now()}_${uuidv4().slice(0, 8)}`;
-  }
+          // 生成优化后的数据
+          const optimizedData = this.canvas.toDataURL(file.type, quality);
 
-  /**
-   * 智能路径生成
-   * @param {string} originalName 原始文件名
-   * @param {string} format 输出格式
-   * @returns {string} 生成的文件路径
-   */
-  generateStoragePath(originalName, format = 'webp') {
-    const { storagePath, useTimestamp, useUniqueId } = this.settings;
+          // 更新性能指标
+          this.updateMetrics(file.size, optimizedData.length);
 
-    let fileName = originalName.split('.')[0];
-
-    if (useTimestamp) {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      fileName += `_${timestamp}`;
-    }
-
-    if (useUniqueId) {
-      const uniqueId = this.generateUniqueId().split('_').pop();
-      fileName += `_${uniqueId}`;
-    }
-
-    const fullPath = `${storagePath}/${fileName}.${format}`;
-    this.log(`生成存储路径: ${fullPath}`);
-
-    return fullPath;
-  }
-
-  /**
-   * 直接处理图像（无压缩）
-   * @param {File} file 原始文件
-   * @returns {Promise<Blob>} 原始文件Blob
-   */
-  async processImageDirect(file) {
-    this.log(`直接保存模式: ${file.name}, 大小: ${(file.size / 1024).toFixed(2)}KB`);
-    return file;
-  }
-
-  /**
-   * 智能压缩策略
-   * @param {HTMLImageElement} img 图像对象
-   * @param {string} outputFormat 输出格式
-   * @returns {Promise<Blob>} 压缩后的图像Blob
-   */
-  async compressImage(img, outputFormat = 'webp') {
-    const { width, height } = this.calculateOptimalSize(img.naturalWidth, img.naturalHeight);
-
-    this.canvas.width = width;
-    this.canvas.height = height;
-
-    // 清除画布
-    this.ctx.clearRect(0, 0, width, height);
-
-    // 绘制图像
-    this.ctx.drawImage(img, 0, 0, width, height);
-
-    // 根据压缩模式确定质量
-    let quality = this.settings.quality;
-
-    switch (this.settings.compressionMode) {
-      case 'quality':
-        quality = Math.max(0.9, this.settings.quality);
-        break;
-      case 'size':
-        quality = Math.min(0.7, this.settings.quality);
-        break;
-      case 'adaptive':
-      default:
-        // 根据文件大小自适应调整质量
-        const pixelCount = width * height;
-        if (pixelCount > 1920 * 1080) {
-          quality *= 0.8;
-        } else if (pixelCount < 800 * 600) {
-          quality = Math.min(0.95, quality * 1.1);
+          resolve(optimizedData);
+        } catch (error) {
+          reject(error);
         }
-        break;
-    }
+      };
 
-    quality = Math.max(0.1, Math.min(1.0, quality));
-
-    return new Promise(resolve => {
-      this.canvas.toBlob(
-        blob => {
-          this.log(`图像压缩完成: ${outputFormat}, 质量: ${quality}, 大小: ${(blob.size / 1024).toFixed(2)}KB`);
-          resolve(blob);
-        },
-        `image/${outputFormat}`,
-        quality,
-      );
+      image.onerror = () => reject(new Error('图像加载失败'));
+      image.src = URL.createObjectURL(file);
     });
   }
 
   /**
-   * 处理图像（根据模式选择直接保存或压缩）
-   * @param {File} file 原始文件
-   * @returns {Promise<{blob: Blob, format: string}>} 处理结果
+   * 计算最优尺寸
    */
-  async processImage(file) {
-    if (this.settings.processingMode === 'direct') {
-      // 直接保存模式
-      const originalExtension = file.name.split('.').pop().toLowerCase();
-      return {
-        blob: await this.processImageDirect(file),
-        format: originalExtension,
-      };
-    } else {
-      // 压缩处理模式
-      const img = new Image();
-      const imageLoadPromise = new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = URL.createObjectURL(file);
-      });
+  calculateOptimalSize(width, height, maxSize, mode) {
+    let newWidth = width;
+    let newHeight = height;
 
-      await imageLoadPromise;
-
-      // 确定输出格式
-      let outputFormat = 'webp';
-      if (!this.settings.enableWebP || !HTMLCanvasElement.prototype.toBlob) {
-        outputFormat = 'jpeg';
+    if (mode === 'speed' && (width > maxSize || height > maxSize)) {
+      // 快速模式：简单等比缩放
+      const ratio = Math.min(maxSize / width, maxSize / height);
+      newWidth = Math.floor(width * ratio);
+      newHeight = Math.floor(height * ratio);
+    } else if (mode === 'quality') {
+      // 质量模式：保持更高分辨率
+      const ratio = Math.min((maxSize * 1.2) / width, (maxSize * 1.2) / height);
+      if (ratio < 1) {
+        newWidth = Math.floor(width * ratio);
+        newHeight = Math.floor(height * ratio);
       }
-
-      const blob = await this.compressImage(img, outputFormat);
-
-      // 清理临时URL
-      URL.revokeObjectURL(img.src);
-
-      return {
-        blob: blob,
-        format: outputFormat,
-      };
+    } else {
+      // 智能模式：根据图像特征自适应
+      const aspectRatio = width / height;
+      if (aspectRatio > 2 || aspectRatio < 0.5) {
+        // 极端宽高比，使用保守压缩
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        if (ratio < 1) {
+          newWidth = Math.floor(width * ratio);
+          newHeight = Math.floor(height * ratio);
+        }
+      } else {
+        // 标准宽高比，可以更激进压缩
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        newWidth = Math.floor(width * ratio);
+        newHeight = Math.floor(height * ratio);
+      }
     }
+
+    this.log(`尺寸优化: ${width}x${height} → ${newWidth}x${newHeight} (${mode}模式)`);
+    return { width: newWidth, height: newHeight };
+  }
+
+  /**
+   * 应用优化算法
+   */
+  applyOptimization(image, dimensions, mode) {
+    if (mode === 'quality') {
+      // 质量模式：使用双线性插值
+      this.context.imageSmoothingEnabled = true;
+      this.context.imageSmoothingQuality = 'high';
+    } else if (mode === 'speed') {
+      // 速度模式：关闭平滑
+      this.context.imageSmoothingEnabled = false;
+    } else {
+      // 智能模式：自适应平滑
+      this.context.imageSmoothingEnabled = true;
+      this.context.imageSmoothingQuality = 'medium';
+    }
+
+    this.context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+  }
+
+  /**
+   * 更新性能指标
+   */
+  updateMetrics(originalSize, optimizedSize) {
+    if (!pluginConfig.enableMetrics) return;
+
+    this.metrics.processed++;
+    const saved = originalSize - optimizedSize;
+    this.metrics.totalSaved += saved;
+
+    const compressionRatio = (saved / originalSize) * 100;
+    this.metrics.avgCompressionRatio =
+      (this.metrics.avgCompressionRatio * (this.metrics.processed - 1) + compressionRatio) / this.metrics.processed;
+  }
+
+  /**
+   * 获取性能报告
+   */
+  getMetrics() {
+    return { ...this.metrics };
   }
 
   /**
@@ -281,10 +221,10 @@ class ImageProcessor {
    * @param {string} level 日志级别
    */
   log(message, level = 'info') {
-    if (!this.settings.enableLogging) return;
+    if (!pluginConfig.enableLogging) return;
 
     const timestamp = new Date().toLocaleTimeString();
-    const prefix = `[${MODULE_NAME}] ${timestamp}`;
+    const prefix = `[Visual Bridge] ${timestamp}`;
 
     switch (level) {
       case 'warn':
@@ -296,6 +236,165 @@ class ImageProcessor {
       default:
         console.log(`${prefix} ℹ️ ${message}`);
     }
+  }
+}
+
+/**
+ * 文件验证器
+ */
+class FileValidator {
+  static validate(file) {
+    if (!file || typeof file !== 'object') {
+      throw new Error('无效的文件对象');
+    }
+
+    if (!file.type || !file.type.startsWith('image/')) {
+      throw new Error('仅支持图像文件');
+    }
+
+    if (!pluginConfig.formatSupport.includes(file.type)) {
+      throw new Error(`不支持的格式: ${file.type}`);
+    }
+
+    const maxBytes = pluginConfig.fileLimit * 1024 * 1024;
+    if (file.size > maxBytes) {
+      throw new Error(`文件过大，限制: ${pluginConfig.fileLimit}MB`);
+    }
+
+    return true;
+  }
+
+  static generateUniqueId(filename) {
+    const timestamp = Date.now();
+    const hash = this.simpleHash(filename);
+    const uuid = uuidv4().slice(0, 8);
+    return `vb_${timestamp}_${hash}_${uuid}`;
+  }
+
+  static simpleHash(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) + hash + str.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(36);
+  }
+}
+
+/**
+ * 存储路径管理器
+ */
+class StorageManager {
+  static generatePath(characterName, mode = pluginConfig.organizationMode) {
+    const now = new Date();
+
+    switch (mode) {
+      case 'chronological':
+        return `visual-assets/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      case 'character':
+        return `characters/${characterName || 'unknown'}/visuals`;
+
+      case 'hybrid':
+      default:
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `visual-bridge/${characterName || 'default'}/${now.getFullYear()}-${month}`;
+    }
+  }
+}
+
+/**
+ * 上下文获取器
+ */
+class ContextProvider {
+  static async getCurrentContext() {
+    try {
+      const ctx = getContext();
+      const character = ctx.characters[ctx.characterId];
+
+      return {
+        characterId: ctx.characterId || 'default',
+        characterName: character?.name || 'unknown',
+        sessionId: ctx.chatId || 'session',
+      };
+    } catch (error) {
+      console.warn('[Visual Bridge] 上下文获取失败:', error);
+      return {
+        characterId: 'default',
+        characterName: 'unknown',
+        sessionId: 'fallback',
+      };
+    }
+  }
+}
+
+/**
+ * 主处理器
+ */
+class VisualBridge {
+  constructor() {
+    this.optimizer = new ImageOptimizer();
+    this.isReady = false;
+  }
+
+  async initialize() {
+    this.isReady = true;
+    console.log(`[Visual Bridge] v${PLUGIN_VERSION} 初始化完成`);
+  }
+
+  async processVisualFile(file, options = {}) {
+    if (!this.isReady) {
+      throw new Error('Visual Bridge 未初始化');
+    }
+
+    if (!pluginConfig.active) {
+      throw new Error('Visual Bridge 已禁用');
+    }
+
+    // 验证文件
+    FileValidator.validate(file);
+
+    // 获取上下文
+    const context = await ContextProvider.getCurrentContext();
+
+    // 处理图像
+    let imageData;
+    if (options.skipOptimization || pluginConfig.processingMode === 'direct') {
+      imageData = await getBase64Async(file);
+    } else {
+      imageData = await this.optimizer.optimizeImage(file, options);
+    }
+
+    // 准备存储
+    const base64Content = imageData.split(',')[1];
+    const fileExtension = file.type.split('/')[1] || 'png';
+    const uniqueId = FileValidator.generateUniqueId(file.name);
+    const storagePath = StorageManager.generatePath(context.characterName);
+
+    // 保存文件 - 使用SillyTavern的saveBase64AsFile
+    let savedUrl;
+    try {
+      savedUrl = await saveBase64AsFile(base64Content, storagePath, uniqueId, fileExtension);
+    } catch (error) {
+      // 如果saveBase64AsFile不可用，回退到data URL
+      console.warn('[Visual Bridge] saveBase64AsFile不可用，使用data URL:', error);
+      savedUrl = imageData;
+    }
+
+    return {
+      success: true,
+      url: savedUrl,
+      metadata: {
+        originalName: file.name,
+        processedName: `${uniqueId}.${fileExtension}`,
+        originalSize: file.size,
+        processedSize: imageData.length,
+        format: file.type,
+        character: context.characterName,
+        optimized: !(options.skipOptimization || pluginConfig.processingMode === 'direct'),
+        timestamp: new Date().toISOString(),
+        processingMode: pluginConfig.processingMode,
+      },
+    };
   }
 }
 
@@ -336,7 +435,6 @@ class ContextManager {
    */
   static generateContextPrefix() {
     const char = this.getCurrentCharacter();
-    const session = this.getSessionInfo();
 
     let prefix = '';
 
@@ -352,288 +450,130 @@ class ContextManager {
   }
 }
 
-// 全局图像处理器实例
-let imageProcessor = null;
+// 创建全局实例
+const visualBridge = new VisualBridge();
 
 /**
- * 全局上传接口函数
- * @param {File} file 要上传的文件
- * @param {Object} options 上传选项
- * @returns {Promise<Object>} 上传结果
+ * 外部接口 - 图像处理入口
  */
-window.__uploadImageByPlugin = async function (file, options = {}) {
-  if (!imageProcessor) {
-    throw new Error('图像处理器未初始化');
-  }
-
-  if (isProcessing) {
-    throw new Error('正在处理其他图像，请稍候');
-  }
-
+window.__uploadImageByPlugin = async function (imageFile, processingOptions = {}) {
   try {
-    isProcessing = true;
-
-    // 验证文件
-    if (!imageProcessor.validateFileType(file)) {
-      throw new Error('不支持的文件格式');
+    if (!imageFile) {
+      throw new Error('请提供图像文件');
     }
 
-    if (!imageProcessor.validateFileSize(file)) {
-      throw new Error('文件大小超出限制');
-    }
+    const result = await visualBridge.processVisualFile(imageFile, processingOptions);
 
-    // 显示处理信息
-    if (extensionSettings.showProcessingInfo) {
-      const modeText = extensionSettings.processingMode === 'direct' ? '直接保存' : '压缩处理';
-      toastr.info(`正在${modeText}图像...`, '图像上传');
-    }
+    console.log('[Visual Bridge] 处理完成:', {
+      文件: imageFile.name,
+      大小变化: `${imageFile.size} → ${result.metadata.processedSize}`,
+      存储位置: result.url,
+      优化模式: result.metadata.processingMode,
+    });
 
-    // 处理图像（根据模式选择直接保存或压缩）
-    const processResult = await imageProcessor.processImage(file);
-    const { blob: processedBlob, format: outputFormat } = processResult;
-
-    // 生成存储路径
-    const contextPrefix = ContextManager.generateContextPrefix();
-    const fileName = `${contextPrefix}${file.name}`;
-    const storagePath = imageProcessor.generateStoragePath(fileName, outputFormat);
-
-    // 创建FormData用于上传
-    const formData = new FormData();
-    formData.append('image', processedBlob, `${fileName}.${outputFormat}`);
-    formData.append('path', storagePath);
-
-    // 使用SillyTavern的工具函数转换为base64
-    const base64Data = await getBase64Async(processedBlob);
-
-    // 模拟上传到服务器（这里需要根据实际的SillyTavern API调整）
-    const uploadResult = {
+    return {
       success: true,
-      url: base64Data, // getBase64Async已经返回完整的data URL
-      path: storagePath,
-      size: processedBlob.size,
-      format: outputFormat,
-      originalSize: file.size,
-      compressionRatio:
-        extensionSettings.processingMode === 'direct'
-          ? '0.00'
-          : (((file.size - processedBlob.size) / file.size) * 100).toFixed(2),
+      url: result.url,
+      path: result.metadata.processedName,
+      size: result.metadata.processedSize,
+      format: result.metadata.format.split('/')[1],
+      originalSize: result.metadata.originalSize,
+      compressionRatio: result.metadata.optimized
+        ? (
+            ((result.metadata.originalSize - result.metadata.processedSize) / result.metadata.originalSize) *
+            100
+          ).toFixed(2)
+        : '0.00',
     };
-
-    // 显示成功信息
-    if (extensionSettings.showProcessingInfo) {
-      const modeText =
-        extensionSettings.processingMode === 'direct' ? '直接保存' : `压缩率: ${uploadResult.compressionRatio}%`;
-      toastr.success(`图像处理完成！${modeText}`, '上传成功');
-    }
-
-    imageProcessor.log(`图像上传成功: ${storagePath}`);
-
-    return uploadResult;
   } catch (error) {
-    imageProcessor.log(`图像上传失败: ${error.message}`, 'error');
-
-    if (extensionSettings.showProcessingInfo) {
-      toastr.error(error.message, '上传失败');
-    }
-
-    throw error;
-  } finally {
-    isProcessing = false;
+    console.error('[Visual Bridge] 处理失败:', error.message);
+    throw new Error(`图像处理失败: ${error.message}`);
   }
 };
 
 /**
- * 加载设置
+ * 配置管理器
  */
-function loadSettings() {
-  extensionSettings = getContext().extensionSettings[MODULE_NAME] || {};
-  Object.assign(extensionSettings, defaultSettings, extensionSettings);
+class ConfigManager {
+  static async loadConfig() {
+    try {
+      if (Object.keys(pluginConfig).length === 0) {
+        Object.assign(pluginConfig, CONFIG_DEFAULTS);
+      }
 
-  // 初始化图像处理器
-  imageProcessor = new ImageProcessor(extensionSettings);
-
-  console.log(`[${MODULE_NAME}] 设置已加载`, extensionSettings);
-}
-
-/**
- * 保存设置
- */
-function saveSettings() {
-  getContext().extensionSettings[MODULE_NAME] = extensionSettings;
-  saveSettingsDebounced();
-
-  // 重新初始化图像处理器
-  if (imageProcessor) {
-    imageProcessor.settings = { ...defaultSettings, ...extensionSettings };
-  }
-
-  console.log(`[${MODULE_NAME}] 设置已保存`);
-}
-
-/**
- * 创建设置界面
- */
-function createSettingsHtml() {
-  return `
-    <div class="third-party-image-processor-settings">
-        <h3>🖼️ 智能图像处理设置</h3>
-        
-        <div class="setting-group">
-            <h4>处理模式</h4>
-            <label>
-                处理方式:
-                <select id="processingMode">
-                    <option value="direct" ${
-                      extensionSettings.processingMode === 'direct' ? 'selected' : ''
-                    }>直接保存（无处理）</option>
-                    <option value="compress" ${
-                      extensionSettings.processingMode === 'compress' ? 'selected' : ''
-                    }>智能压缩处理</option>
-                </select>
-            </label>
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                直接保存：保持原始图像不变；智能压缩：优化图像大小和质量
-            </div>
-        </div>
-
-        <div class="setting-group" id="compressionSettings">
-            <h4>压缩设置</h4>
-            <label>
-                最大宽度: <input type="number" id="maxWidth" min="100" max="4096" value="${extensionSettings.maxWidth}">
-            </label>
-            <label>
-                最大高度: <input type="number" id="maxHeight" min="100" max="4096" value="${
-                  extensionSettings.maxHeight
-                }">
-            </label>
-            <label>
-                图像质量: <input type="range" id="quality" min="0.1" max="1" step="0.05" value="${
-                  extensionSettings.quality
-                }">
-                <span id="qualityValue">${Math.round(extensionSettings.quality * 100)}%</span>
-            </label>
-            <label>
-                压缩模式:
-                <select id="compressionMode">
-                    <option value="adaptive" ${
-                      extensionSettings.compressionMode === 'adaptive' ? 'selected' : ''
-                    }>自适应</option>
-                    <option value="quality" ${
-                      extensionSettings.compressionMode === 'quality' ? 'selected' : ''
-                    }>保持质量</option>
-                    <option value="size" ${
-                      extensionSettings.compressionMode === 'size' ? 'selected' : ''
-                    }>压缩优先</option>
-                </select>
-            </label>
-        </div>
-        
-        <div class="setting-group">
-            <h4>文件限制</h4>
-            <label>
-                最大文件大小 (MB): <input type="number" id="maxFileSize" min="1" max="100" value="${
-                  extensionSettings.maxFileSize / 1024 / 1024
-                }">
-            </label>
-        </div>
-        
-        <div class="setting-group">
-            <h4>高级选项</h4>
-            <label>
-                <input type="checkbox" id="enableWebP" ${extensionSettings.enableWebP ? 'checked' : ''}> 启用WebP格式
-            </label>
-            <label>
-                <input type="checkbox" id="autoOptimize" ${extensionSettings.autoOptimize ? 'checked' : ''}> 自动优化
-            </label>
-            <label>
-                <input type="checkbox" id="showProcessingInfo" ${
-                  extensionSettings.showProcessingInfo ? 'checked' : ''
-                }> 显示处理信息
-            </label>
-            <label>
-                <input type="checkbox" id="enableLogging" ${
-                  extensionSettings.enableLogging ? 'checked' : ''
-                }> 启用调试日志
-            </label>
-        </div>
-    </div>
-    `;
-}
-
-/**
- * 绑定设置事件
- */
-function bindSettingsEvents() {
-  // 处理模式切换
-  $('#processingMode').on('change', function () {
-    extensionSettings.processingMode = this.value;
-    saveSettings();
-
-    // 根据模式显示/隐藏压缩设置
-    const compressionSettings = $('#compressionSettings');
-    if (this.value === 'direct') {
-      compressionSettings.hide();
-    } else {
-      compressionSettings.show();
+      this.updateInterface();
+      console.log('[Visual Bridge] 配置加载完成');
+    } catch (error) {
+      console.error('[Visual Bridge] 配置加载失败:', error);
     }
-  });
-
-  // 初始化时根据当前模式显示/隐藏压缩设置
-  const compressionSettings = $('#compressionSettings');
-  if (extensionSettings.processingMode === 'direct') {
-    compressionSettings.hide();
-  } else {
-    compressionSettings.show();
   }
 
-  $('#maxWidth, #maxHeight').on('input', function () {
-    extensionSettings[this.id] = parseInt(this.value);
-    saveSettings();
-  });
+  static updateInterface() {
+    $('#vb-enabled')?.prop('checked', pluginConfig.active);
+    $('#vb-optimization-mode')?.val(pluginConfig.optimizationMode);
+    $('#vb-quality')?.val(pluginConfig.qualityLevel);
+    $('#processingMode')?.val(pluginConfig.processingMode);
+  }
 
-  $('#quality').on('input', function () {
-    extensionSettings.quality = parseFloat(this.value);
-    $('#qualityValue').text(Math.round(this.value * 100) + '%');
-    saveSettings();
-  });
-
-  $('#compressionMode').on('change', function () {
-    extensionSettings.compressionMode = this.value;
-    saveSettings();
-  });
-
-  $('#maxFileSize').on('input', function () {
-    extensionSettings.maxFileSize = parseInt(this.value) * 1024 * 1024;
-    saveSettings();
-  });
-
-  $('#enableWebP, #autoOptimize, #showProcessingInfo, #enableLogging').on('change', function () {
-    extensionSettings[this.id] = this.checked;
-    saveSettings();
-  });
+  static saveConfig() {
+    saveSettingsDebounced();
+    console.log('[Visual Bridge] 配置已保存');
+  }
 }
 
 /**
- * 插件初始化
+ * 事件处理
+ */
+const EventManager = {
+  onToggleActive(event) {
+    pluginConfig.active = Boolean($(event.target).prop('checked'));
+    ConfigManager.saveConfig();
+
+    const status = pluginConfig.active ? '已启用' : '已禁用';
+    toastr.info(`Visual Bridge ${status}`, 'kencuo插件');
+  },
+
+  onModeChange(event) {
+    pluginConfig.processingMode = $(event.target).val();
+    ConfigManager.saveConfig();
+  },
+
+  onOptimizationModeChange(event) {
+    pluginConfig.optimizationMode = $(event.target).val();
+    ConfigManager.saveConfig();
+  },
+
+  onQualityChange(event) {
+    pluginConfig.qualityLevel = parseInt($(event.target).val());
+    ConfigManager.saveConfig();
+  },
+};
+
+/**
+ * 插件启动
  */
 jQuery(async () => {
-  // 加载设置
-  loadSettings();
+  try {
+    console.log(`[Visual Bridge] 启动中... v${PLUGIN_VERSION} by ${PLUGIN_AUTHOR}`);
 
-  // 创建设置界面
-  const settingsHtml = createSettingsHtml();
-  $('#extensions_settings').append(settingsHtml);
+    // 绑定事件
+    $('#vb-enabled').on('change', EventManager.onToggleActive);
+    $('#vb-optimization-mode').on('change', EventManager.onOptimizationModeChange);
+    $('#vb-quality').on('input', EventManager.onQualityChange);
+    $('#processingMode').on('change', EventManager.onModeChange);
 
-  // 绑定事件
-  bindSettingsEvents();
+    // 初始化
+    await ConfigManager.loadConfig();
+    await visualBridge.initialize();
 
-  // 注册事件监听器
-  eventSource.on(event_types.SETTINGS_LOADED, loadSettings);
+    console.log('[Visual Bridge] 启动完成!');
+    console.log('[Visual Bridge] GitHub: https://github.com/kencuo/chajian');
 
-  console.log(`[${MODULE_NAME}] 插件初始化完成`);
-
-  // 显示初始化成功消息
-  if (extensionSettings.showProcessingInfo) {
-    toastr.success('智能图像处理插件已启用', '插件加载');
+    // 显示启动成功消息
+    if (pluginConfig.showProcessingInfo) {
+      toastr.success('Visual Bridge 已启用', 'kencuo插件');
+    }
+  } catch (error) {
+    console.error('[Visual Bridge] 启动失败:', error);
   }
 });
