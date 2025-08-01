@@ -10,6 +10,7 @@
 import { saveSettingsDebounced } from '../../../script.js';
 import { event_types, eventSource } from '../../event-source.js';
 import { getContext } from '../../extensions.js';
+import { getBase64Async, uuidv4 } from '../../utils.js';
 
 // 插件配置
 const MODULE_NAME = 'third-party-image-processor';
@@ -134,13 +135,11 @@ class ImageProcessor {
   }
 
   /**
-   * 唯一ID生成
+   * 唯一ID生成（使用SillyTavern的UUID工具）
    * @returns {string} 唯一标识符
    */
   generateUniqueId() {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substr(2, 9);
-    return `img_${timestamp}_${random}`;
+    return `img_${Date.now()}_${uuidv4().slice(0, 8)}`;
   }
 
   /**
@@ -403,10 +402,13 @@ window.__uploadImageByPlugin = async function (file, options = {}) {
     formData.append('image', processedBlob, `${fileName}.${outputFormat}`);
     formData.append('path', storagePath);
 
+    // 使用SillyTavern的工具函数转换为base64
+    const base64Data = await getBase64Async(processedBlob);
+
     // 模拟上传到服务器（这里需要根据实际的SillyTavern API调整）
     const uploadResult = {
       success: true,
-      url: `data:${processedBlob.type};base64,${await blobToBase64(processedBlob)}`,
+      url: base64Data, // getBase64Async已经返回完整的data URL
       path: storagePath,
       size: processedBlob.size,
       format: outputFormat,
@@ -439,20 +441,6 @@ window.__uploadImageByPlugin = async function (file, options = {}) {
     isProcessing = false;
   }
 };
-
-/**
- * 将Blob转换为Base64
- * @param {Blob} blob Blob对象
- * @returns {Promise<string>} Base64字符串
- */
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
 
 /**
  * 加载设置
