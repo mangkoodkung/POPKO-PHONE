@@ -1,15 +1,8 @@
 /**
- * Visual Bridge - SillyTavern Extension
+ *  不知道能不能发送文件啊，试试吧- SillyTavern Extension
  * 作者: kencuo
  * 版本: 1.0.0
- * 功能: 智能视觉文件桥接器，提供高效的图像处理和存储解决方案
  * GitHub: https://github.com/kencuo/chajian
- *
- * 特色功能：
- * - 自适应图像优化
- * - 智能存储管理
- * - 多格式支持
- * - 性能监控
  */
 
 // 导入SillyTavern核心模块
@@ -51,6 +44,18 @@ const CONFIG_DEFAULTS = {
   useTimestamp: true,
   useUniqueId: true,
   simpleMode: false, // 默认不启用简单模式，使用原有的完整处理
+
+  // 文档处理设置
+  enableDocumentProcessing: true, // 启用文档处理功能
+  documentFormats: [
+    'text/plain',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ],
+  documentMaxSize: 50 * 1024 * 1024, // 文档最大50MB
+  enableAIReading: true, // 启用AI阅读功能
+  documentStoragePath: 'user/documents',
 };
 
 // 全局配置管理
@@ -255,20 +260,35 @@ class ImageOptimizer {
 }
 
 /**
- * 文件验证器
+ * 文件验证器 - 支持图像和文档
  */
 class FileValidator {
-  static validate(file) {
+  static validate(file, fileType = 'image') {
     if (!file || typeof file !== 'object') {
       throw new Error('无效的文件对象');
     }
 
-    if (!file.type || !file.type.startsWith('image/')) {
-      throw new Error('仅支持图像文件');
-    }
+    if (fileType === 'image') {
+      if (!file.type || !file.type.startsWith('image/')) {
+        throw new Error('仅支持图像文件');
+      }
 
-    if (!pluginConfig.formatSupport.includes(file.type)) {
-      throw new Error(`不支持的格式: ${file.type}`);
+      if (!pluginConfig.formatSupport.includes(file.type)) {
+        throw new Error(`不支持的格式: ${file.type}`);
+      }
+    } else if (fileType === 'document') {
+      const supportedDocs = [
+        'text/plain',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/json',
+        'text/markdown',
+      ];
+
+      if (!supportedDocs.includes(file.type)) {
+        throw new Error(`不支持的文档格式: ${file.type}`);
+      }
     }
 
     const maxBytes = pluginConfig.fileLimit * 1024 * 1024;
@@ -296,6 +316,74 @@ class FileValidator {
 }
 
 /**
+ * 文档处理器
+ */
+class DocumentProcessor {
+  constructor() {
+    this.supportedTypes = pluginConfig.documentFormats || [
+      'text/plain',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+  }
+
+  async processDocument(file) {
+    // 验证文件
+    FileValidator.validate(file, 'document');
+
+    let content = '';
+
+    switch (file.type) {
+      case 'text/plain':
+        content = await this.readTextFile(file);
+        break;
+      case 'application/pdf':
+        content = await this.readPDFFile(file);
+        break;
+      case 'application/json':
+        content = await this.readJSONFile(file);
+        break;
+      default:
+        throw new Error(`暂不支持的文档类型: ${file.type}`);
+    }
+
+    return {
+      content,
+      type: file.type,
+      name: file.name,
+      size: file.size,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  async readTextFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file, 'UTF-8');
+    });
+  }
+
+  async readJSONFile(file) {
+    const text = await this.readTextFile(file);
+    try {
+      const json = JSON.parse(text);
+      return JSON.stringify(json, null, 2);
+    } catch (error) {
+      return text; // 如果不是有效JSON，返回原文本
+    }
+  }
+
+  async readPDFFile(file) {
+    // 注意：这里需要PDF.js库来解析PDF
+    // 简化版本，实际使用时需要引入PDF.js
+    throw new Error('PDF处理需要额外的库支持，请使用SillyTavern的Data Bank功能');
+  }
+}
+
+/**
  * 存储路径管理器
  */
 class StorageManager {
@@ -313,6 +401,24 @@ class StorageManager {
       default:
         const month = String(now.getMonth() + 1).padStart(2, '0');
         return `visual-bridge/${characterName || 'default'}/${now.getFullYear()}-${month}`;
+    }
+  }
+
+  static generateDocumentPath(characterName, mode = 'hybrid') {
+    const now = new Date();
+    const basePath = pluginConfig.documentStoragePath || 'user/documents';
+
+    switch (mode) {
+      case 'chronological':
+        return `${basePath}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      case 'character':
+        return `${basePath}/${characterName || 'unknown'}`;
+
+      case 'hybrid':
+      default:
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `${basePath}/${characterName || 'default'}/${now.getFullYear()}-${month}`;
     }
   }
 }
@@ -482,6 +588,113 @@ window.__uploadImageByPlugin = async function (imageFile, processingOptions = {}
   } finally {
     isProcessing = false;
   }
+};
+
+/**
+ * 外部接口 - 文档处理入口
+ */
+window.__processDocumentByPlugin = async function (documentFile, options = {}) {
+  try {
+    if (!documentFile) {
+      throw new Error('请提供文档文件');
+    }
+
+    if (!pluginConfig.enableDocumentProcessing) {
+      throw new Error('文档处理功能已禁用');
+    }
+
+    // 显示处理信息
+    if (pluginConfig.showProcessingInfo) {
+      toastr.info('正在处理文档...', '文档处理');
+    }
+
+    const processor = new DocumentProcessor();
+    const result = await processor.processDocument(documentFile);
+
+    // 获取上下文信息
+    const context = await ContextProvider.getCurrentContext();
+
+    // 如果启用AI阅读，调用SillyTavern的AI功能
+    if (pluginConfig.enableAIReading && options.enableAIReading !== false) {
+      try {
+        // 构建AI阅读提示
+        const aiPrompt = options.aiPrompt || `请阅读并总结以下文档内容：\n\n${result.content}`;
+
+        // 这里可以调用SillyTavern的AI生成功能
+        // 注意：需要确保SillyTavern的AI接口可用
+        console.log('[Document Processor] AI阅读功能需要集成SillyTavern的AI接口');
+      } catch (aiError) {
+        console.warn('[Document Processor] AI阅读失败:', aiError);
+      }
+    }
+
+    // 显示成功信息
+    if (pluginConfig.showProcessingInfo) {
+      toastr.success(`文档处理完成！类型: ${result.type}`, '处理成功');
+    }
+
+    console.log('[Document Processor] 处理完成:', {
+      文件: documentFile.name,
+      类型: result.type,
+      大小: `${documentFile.size} bytes`,
+      内容长度: `${result.content.length} chars`,
+    });
+
+    return {
+      success: true,
+      content: result.content,
+      metadata: {
+        originalName: documentFile.name,
+        type: result.type,
+        size: documentFile.size,
+        contentLength: result.content.length,
+        character: context.characterName,
+        timestamp: result.timestamp,
+      },
+    };
+  } catch (error) {
+    console.error('[Document Processor] 处理失败:', error.message);
+
+    if (pluginConfig.showProcessingInfo) {
+      toastr.error(error.message, '处理失败');
+    }
+
+    throw new Error(`文档处理失败: ${error.message}`);
+  }
+};
+
+/**
+ * 外部接口 - 通用文件处理入口（自动识别文件类型）
+ */
+window.__processFileByPlugin = async function (file, options = {}) {
+  try {
+    if (!file) {
+      throw new Error('请提供文件');
+    }
+
+    // 自动识别文件类型
+    if (file.type.startsWith('image/')) {
+      return await window.__uploadImageByPlugin(file, options);
+    } else if (pluginConfig.documentFormats.includes(file.type)) {
+      return await window.__processDocumentByPlugin(file, options);
+    } else {
+      throw new Error(`不支持的文件类型: ${file.type}`);
+    }
+  } catch (error) {
+    console.error('[File Processor] 处理失败:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * 外部接口 - 获取支持的文件类型
+ */
+window.__getSupportedFileTypes = function () {
+  return {
+    images: pluginConfig.formatSupport || [],
+    documents: pluginConfig.documentFormats || [],
+    all: [...(pluginConfig.formatSupport || []), ...(pluginConfig.documentFormats || [])],
+  };
 };
 
 /**
@@ -788,16 +1001,9 @@ jQuery(async () => {
     console.log('[Visual Bridge] 启动完成!');
     console.log('[Visual Bridge] GitHub: https://github.com/kencuo/chajian');
 
-    // 显示初始化成功消息（仅在用户启用显示处理信息时）
+    // 显示初始化成功消息
     if (pluginConfig.showProcessingInfo) {
-      let modeText = '原有Visual Bridge模式';
-      if (pluginConfig.simpleMode) {
-        modeText = '简单上传模式';
-      } else if (pluginConfig.processingMode === 'compress') {
-        modeText = '高级压缩模式';
-      } else if (pluginConfig.processingMode === 'direct') {
-        modeText = '直接保存模式';
-      }
+      const modeText = pluginConfig.simpleMode ? '简单上传模式' : '完整图像处理模式';
       toastr.success(`智能图像处理插件已启用 (${modeText})`, '插件加载');
     }
   } catch (error) {
