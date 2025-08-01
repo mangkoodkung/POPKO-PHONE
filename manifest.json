@@ -4,7 +4,6 @@
   "requires": [],
   "optional": [],
   "js": "visual-bridge.js",
-  "css": "visual-bridge.css",
   "author": "kencuo",
   "version": "1.0.0",
   "homePage": "https://github.com/kencuo/chajian",
