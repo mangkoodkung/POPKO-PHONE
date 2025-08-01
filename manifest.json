@@ -1,13 +1,27 @@
 {
-  "display_name": "视觉识图桥接器",
-  "loading_order": 9,
+  "display_name": "智能视觉桥接器",
+  "loading_order": 15,
   "requires": [],
   "optional": [],
-  "js": "index.js",
-  "css": "",
+  "js": "visual-bridge.js",
+  "css": "visual-bridge.css",
   "author": "kencuo",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "homePage": "https://github.com/kencuo/chajian",
-  "auto_update": true,
-  "description": "为外部应用提供SillyTavern内置视觉识图功能的桥接接口"
+  "description": "高效的图像处理和存储解决方案，提供智能优化、多格式支持和性能监控功能",
+  "auto_update": false,
+  "tags": ["图像处理", "存储管理", "性能优化", "视觉AI"],
+  "license": "MIT",
+  "keywords": ["visual", "image", "bridge", "optimization", "storage"],
+  "compatibility": {
+    "min_version": "1.10.0",
+    "max_version": "*"
+  },
+  "features": [
+    "智能图像优化",
+    "自适应存储管理", 
+    "多格式支持",
+    "性能监控",
+    "灵活配置"
+  ]
 }
