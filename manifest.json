@@ -1,27 +1,13 @@
 {
-  "display_name": "真的可以准确识图吗",
+  "display_name": "Visual Bridge - 视觉桥接生态系统",
   "loading_order": 15,
   "requires": [],
   "optional": [],
   "js": "visual-bridge.js",
-  "cs":"visual-bridge.css",
-  "author": "kencuo",
+  "css": "visual-bridge.css",
+  "author": "ctrl",
   "version": "1.0.0",
   "homePage": "https://github.com/kencuo/chajian",
-  "description": "高效的图像处理和存储解决方案，提供智能优化、多格式支持和性能监控功能",
-  "auto_update": false,
-  "tags": ["图像处理", "存储管理", "性能优化", "视觉AI"],
-  "license": "MIT",
-  "keywords": ["visual", "image", "bridge", "optimization", "storage"],
-  "compatibility": {
-    "min_version": "1.10.0",
-    "max_version": "*"
-  },
-  "features": [
-    "智能图像优化",
-    "自适应存储管理", 
-    "多格式支持",
-    "性能监控",
-    "灵活配置"
-  ]
+  "auto_update": true,
+  "description": "基于微服务架构的分布式媒体处理生态系统，采用Web Workers、IndexedDB和消息队列技术"
 }
