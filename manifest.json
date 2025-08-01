@@ -1,6 +1,6 @@
 {
   "display_name": "视觉识图桥接器",
-  "loading_order": 10,
+  "loading_order": 9,
   "requires": [],
   "optional": [],
   "js": "index.js",
