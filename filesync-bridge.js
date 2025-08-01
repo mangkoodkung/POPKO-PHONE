@@ -1,258 +1,238 @@
-/**
- * Visual Bridge - SillyTavern Extension
- * 作者: kencuo
- * 版本: 1.0.0
- * 功能: 智能视觉文件桥接器，提供高效的图像处理和存储解决方案
- * GitHub: https://github.com/kencuo/chajian
- * 
- * 特色功能：
- * - 自适应图像优化
- * - 智能存储管理
- * - 多格式支持
- * - 性能监控
- */
-
-// 导入SillyTavern核心模块
-import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
-import { getContext } from '../../../extensions.js';
+// Core SillyTavern imports
 import { saveSettingsDebounced } from '../../../../script.js';
+import { getContext } from '../../../extensions.js';
+import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 
-// 插件元数据
-const PLUGIN_ID = 'visual-bridge-kencuo';
-const PLUGIN_VERSION = '1.2.0';
-const PLUGIN_AUTHOR = 'kencuo';
+// Extension metadata
+const EXT_NAMESPACE = 'mediaflow-processor';
+const BUILD_VERSION = '2.1.0';
+const DEVELOPER_TAG = 'kencuo';
 
-// 配置常量
-const CONFIG_DEFAULTS = {
-  active: true,
-  optimizationMode: 'smart', // 'smart', 'quality', 'speed'
-  qualityLevel: 85, // 0-100
-  maxDimension: 2048,
-  fileLimit: 20, // MB
-  formatSupport: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
-  organizationMode: 'hybrid', // 'hybrid', 'chronological', 'character'
-  enableMetrics: true,
+// Default configuration schema
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  processingStrategy: 'adaptive', // 'adaptive', 'preserve', 'compress'
+  compressionRate: 85, // 0-100 scale
+  maxResolution: 2048,
+  sizeThreshold: 20, // Megabytes
+  supportedTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  storagePattern: 'smart', // 'smart', 'temporal', 'grouped'
+  trackingEnabled: true,
 };
 
-// 全局配置管理
+// Global settings management
 window.extension_settings = window.extension_settings || {};
-window.extension_settings[PLUGIN_ID] = window.extension_settings[PLUGIN_ID] || {};
-const pluginConfig = window.extension_settings[PLUGIN_ID];
+window.extension_settings[EXT_NAMESPACE] = window.extension_settings[EXT_NAMESPACE] || {};
+const extensionConfig = window.extension_settings[EXT_NAMESPACE];
 
-// 初始化默认配置
-for (const [key, value] of Object.entries(CONFIG_DEFAULTS)) {
-  if (pluginConfig[key] === undefined) {
-    pluginConfig[key] = value;
+// Initialize configuration with defaults
+for (const [setting, defaultValue] of Object.entries(DEFAULT_SETTINGS)) {
+  if (extensionConfig[setting] === undefined) {
+    extensionConfig[setting] = defaultValue;
   }
 }
 
-/**
- * 图像优化引擎
- */
-class ImageOptimizer {
+// Advanced image processing engine
+class MediaProcessor {
   constructor() {
-    this.canvas = null;
-    this.context = null;
-    this.metrics = {
-      processed: 0,
-      totalSaved: 0,
-      avgCompressionRatio: 0
+    this.renderCanvas = null;
+    this.renderContext = null;
+    this.statistics = {
+      filesProcessed: 0,
+      bytesReduced: 0,
+      averageCompression: 0,
     };
   }
 
-  /**
-   * 初始化画布
-   */
-  initCanvas() {
-    if (!this.canvas) {
-      this.canvas = document.createElement('canvas');
-      this.context = this.canvas.getContext('2d');
+  // Setup rendering environment
+  setupCanvas() {
+    if (!this.renderCanvas) {
+      this.renderCanvas = document.createElement('canvas');
+      this.renderContext = this.renderCanvas.getContext('2d');
     }
   }
 
-  /**
-   * 智能图像处理
-   */
-  async optimizeImage(file, options = {}) {
-    this.initCanvas();
-    
-    const mode = options.mode || pluginConfig.optimizationMode;
-    const quality = (options.quality || pluginConfig.qualityLevel) / 100;
-    const maxSize = options.maxSize || pluginConfig.maxDimension;
+  // Process image with intelligent algorithms
+  async enhanceMedia(sourceFile, processingOptions = {}) {
+    this.setupCanvas();
+
+    const strategy = processingOptions.strategy || extensionConfig.processingStrategy;
+    const compression = (processingOptions.compression || extensionConfig.compressionRate) / 100;
+    const maxDimension = processingOptions.maxDimension || extensionConfig.maxResolution;
 
     return new Promise((resolve, reject) => {
-      const image = new Image();
-      
-      image.onload = () => {
+      const imageElement = new Image();
+
+      imageElement.onload = () => {
         try {
-          const dimensions = this.calculateOptimalSize(image.width, image.height, maxSize, mode);
-          
-          this.canvas.width = dimensions.width;
-          this.canvas.height = dimensions.height;
-          
-          // 应用优化算法
-          this.applyOptimization(image, dimensions, mode);
-          
-          // 生成优化后的数据
-          const optimizedData = this.canvas.toDataURL(file.type, quality);
-          
-          // 更新性能指标
-          this.updateMetrics(file.size, optimizedData.length);
-          
-          resolve(optimizedData);
-        } catch (error) {
-          reject(error);
+          const targetDimensions = this.calculateTargetSize(
+            imageElement.width,
+            imageElement.height,
+            maxDimension,
+            strategy,
+          );
+
+          this.renderCanvas.width = targetDimensions.width;
+          this.renderCanvas.height = targetDimensions.height;
+
+          // Apply processing algorithms
+          this.applyProcessing(imageElement, targetDimensions, strategy);
+
+          // Generate processed data
+          const processedData = this.renderCanvas.toDataURL(sourceFile.type, compression);
+
+          // Update performance metrics
+          this.recordMetrics(sourceFile.size, processedData.length);
+
+          resolve(processedData);
+        } catch (processingError) {
+          reject(processingError);
         }
       };
-      
-      image.onerror = () => reject(new Error('图像加载失败'));
-      image.src = URL.createObjectURL(file);
+
+      imageElement.onerror = () => reject(new Error('Media loading failed'));
+      imageElement.src = URL.createObjectURL(sourceFile);
     });
   }
 
-  /**
-   * 计算最优尺寸
-   */
-  calculateOptimalSize(width, height, maxSize, mode) {
-    let newWidth = width;
-    let newHeight = height;
+  // Calculate optimal dimensions based on strategy
+  calculateTargetSize(originalWidth, originalHeight, maxDimension, processingStrategy) {
+    let targetWidth = originalWidth;
+    let targetHeight = originalHeight;
 
-    if (mode === 'speed' && (width > maxSize || height > maxSize)) {
-      // 快速模式：简单等比缩放
-      const ratio = Math.min(maxSize / width, maxSize / height);
-      newWidth = Math.floor(width * ratio);
-      newHeight = Math.floor(height * ratio);
-    } else if (mode === 'quality') {
-      // 质量模式：保持更高分辨率
-      const ratio = Math.min((maxSize * 1.2) / width, (maxSize * 1.2) / height);
-      if (ratio < 1) {
-        newWidth = Math.floor(width * ratio);
-        newHeight = Math.floor(height * ratio);
+    if (processingStrategy === 'compress' && (originalWidth > maxDimension || originalHeight > maxDimension)) {
+      // Compression mode: aggressive scaling
+      const scaleFactor = Math.min(maxDimension / originalWidth, maxDimension / originalHeight);
+      targetWidth = Math.floor(originalWidth * scaleFactor);
+      targetHeight = Math.floor(originalHeight * scaleFactor);
+    } else if (processingStrategy === 'preserve') {
+      // Preserve mode: maintain higher resolution
+      const scaleFactor = Math.min((maxDimension * 1.2) / originalWidth, (maxDimension * 1.2) / originalHeight);
+      if (scaleFactor < 1) {
+        targetWidth = Math.floor(originalWidth * scaleFactor);
+        targetHeight = Math.floor(originalHeight * scaleFactor);
       }
     } else {
-      // 智能模式：根据图像特征自适应
-      const aspectRatio = width / height;
+      // Adaptive mode: intelligent scaling based on aspect ratio
+      const aspectRatio = originalWidth / originalHeight;
       if (aspectRatio > 2 || aspectRatio < 0.5) {
-        // 极端宽高比，使用保守压缩
-        const ratio = Math.min(maxSize / width, maxSize / height);
-        if (ratio < 1) {
-          newWidth = Math.floor(width * ratio);
-          newHeight = Math.floor(height * ratio);
+        // Extreme aspect ratios: conservative scaling
+        const scaleFactor = Math.min(maxDimension / originalWidth, maxDimension / originalHeight);
+        if (scaleFactor < 1) {
+          targetWidth = Math.floor(originalWidth * scaleFactor);
+          targetHeight = Math.floor(originalHeight * scaleFactor);
         }
       } else {
-        // 标准宽高比，可以更激进压缩
-        const ratio = Math.min(maxSize / width, maxSize / height);
-        newWidth = Math.floor(width * ratio);
-        newHeight = Math.floor(height * ratio);
+        // Standard aspect ratios: more aggressive scaling
+        const scaleFactor = Math.min(maxDimension / originalWidth, maxDimension / originalHeight);
+        targetWidth = Math.floor(originalWidth * scaleFactor);
+        targetHeight = Math.floor(originalHeight * scaleFactor);
       }
     }
 
-    return { width: newWidth, height: newHeight };
+    return { width: targetWidth, height: targetHeight };
   }
 
-  /**
-   * 应用优化算法
-   */
-  applyOptimization(image, dimensions, mode) {
-    if (mode === 'quality') {
-      // 质量模式：使用双线性插值
-      this.context.imageSmoothingEnabled = true;
-      this.context.imageSmoothingQuality = 'high';
-    } else if (mode === 'speed') {
-      // 速度模式：关闭平滑
-      this.context.imageSmoothingEnabled = false;
+  // Apply processing algorithms based on strategy
+  applyProcessing(imageElement, targetDimensions, processingStrategy) {
+    if (processingStrategy === 'preserve') {
+      // Preserve mode: high-quality interpolation
+      this.renderContext.imageSmoothingEnabled = true;
+      this.renderContext.imageSmoothingQuality = 'high';
+    } else if (processingStrategy === 'compress') {
+      // Compress mode: disable smoothing for speed
+      this.renderContext.imageSmoothingEnabled = false;
     } else {
-      // 智能模式：自适应平滑
-      this.context.imageSmoothingEnabled = true;
-      this.context.imageSmoothingQuality = 'medium';
+      // Adaptive mode: balanced smoothing
+      this.renderContext.imageSmoothingEnabled = true;
+      this.renderContext.imageSmoothingQuality = 'medium';
     }
 
-    this.context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+    this.renderContext.drawImage(imageElement, 0, 0, targetDimensions.width, targetDimensions.height);
   }
 
-  /**
-   * 更新性能指标
-   */
-  updateMetrics(originalSize, optimizedSize) {
-    if (!pluginConfig.enableMetrics) return;
+  // Record performance statistics
+  recordMetrics(originalBytes, processedBytes) {
+    if (!extensionConfig.trackingEnabled) return;
 
-    this.metrics.processed++;
-    const saved = originalSize - optimizedSize;
-    this.metrics.totalSaved += saved;
-    
-    const compressionRatio = (saved / originalSize) * 100;
-    this.metrics.avgCompressionRatio = 
-      (this.metrics.avgCompressionRatio * (this.metrics.processed - 1) + compressionRatio) / this.metrics.processed;
+    this.statistics.filesProcessed++;
+    const bytesReduced = originalBytes - processedBytes;
+    this.statistics.bytesReduced += bytesReduced;
+
+    const compressionPercentage = (bytesReduced / originalBytes) * 100;
+    this.statistics.averageCompression =
+      (this.statistics.averageCompression * (this.statistics.filesProcessed - 1) + compressionPercentage) /
+      this.statistics.filesProcessed;
   }
 
-  /**
-   * 获取性能报告
-   */
-  getMetrics() {
-    return { ...this.metrics };
+  // Get performance statistics
+  getStatistics() {
+    return { ...this.statistics };
   }
 }
 
-/**
- * 文件验证器
- */
-class FileValidator {
-  static validate(file) {
-    if (!file || typeof file !== 'object') {
-      throw new Error('无效的文件对象');
+// File validation and security checks
+class SecurityValidator {
+  static validateFile(inputFile) {
+    if (!inputFile || typeof inputFile !== 'object') {
+      throw new Error('Invalid file object provided');
     }
 
-    if (!file.type || !file.type.startsWith('image/')) {
-      throw new Error('仅支持图像文件');
+    if (!inputFile.type || !inputFile.type.startsWith('image/')) {
+      throw new Error('Only image files are supported');
     }
 
-    if (!pluginConfig.formatSupport.includes(file.type)) {
-      throw new Error(`不支持的格式: ${file.type}`);
+    if (!extensionConfig.supportedTypes.includes(inputFile.type)) {
+      throw new Error(`Unsupported format: ${inputFile.type}`);
     }
 
-    const maxBytes = pluginConfig.fileLimit * 1024 * 1024;
-    if (file.size > maxBytes) {
-      throw new Error(`文件过大，限制: ${pluginConfig.fileLimit}MB`);
+    const maxBytes = extensionConfig.sizeThreshold * 1024 * 1024;
+    if (inputFile.size > maxBytes) {
+      throw new Error(`File exceeds size limit: ${extensionConfig.sizeThreshold}MB`);
     }
 
     return true;
   }
 
-  static generateUniqueId(filename) {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 10);
-    const hash = this.simpleHash(filename);
-    return `vb_${timestamp}_${hash}_${random}`;
+  static createUniqueId(filename) {
+    const currentTime = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 10);
+    const filenameHash = this.generateHash(filename);
+    return `mf_${currentTime}_${filenameHash}_${randomSuffix}`;
   }
 
-  static simpleHash(str) {
-    let hash = 5381;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) + hash) + str.charCodeAt(i);
+  static generateHash(inputString) {
+    let hashValue = 5381;
+    for (let i = 0; i < inputString.length; i++) {
+      hashValue = (hashValue << 5) + hashValue + inputString.charCodeAt(i);
     }
-    return (hash >>> 0).toString(36);
+    return (hashValue >>> 0).toString(36);
   }
 }
 
-/**
- * 存储路径管理器
- */
-class StorageManager {
-  static generatePath(characterName, mode = pluginConfig.organizationMode) {
-    const now = new Date();
-    
-    switch (mode) {
-      case 'chronological':
-        return `visual-assets/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
-      
-      case 'character':
-        return `characters/${characterName || 'unknown'}/visuals`;
-      
-      case 'hybrid':
+// Storage path management system
+class PathManager {
+  static createStoragePath(characterName, pattern = extensionConfig.storagePattern) {
+    const currentDate = new Date();
+
+    switch (pattern) {
+      case 'temporal':
+        return `media-assets/${currentDate.getFullYear()}/${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+
+      case 'grouped':
+        return `characters/${characterName || 'default'}/media`;
+
+      case 'smart':
       default:
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        return `visual-bridge/${characterName || 'default'}/${now.getFullYear()}-${month}`;
+        const monthStr = String(currentDate.getMonth() + 1).padStart(2, '0');
+        return `mediaflow/${characterName || 'default'}/${currentDate.getFullYear()}-${monthStr}`;
     }
+  }
+
+  static buildFilename(originalFilename, uniqueIdentifier) {
+    const fileExtension = originalFilename.split('.').pop();
+    const baseFilename = originalFilename.replace(/\.[^/.]+$/, '').substring(0, 50);
+    return `${baseFilename}_${uniqueIdentifier}.${fileExtension}`;
   }
 }
 
@@ -264,7 +244,7 @@ class ContextProvider {
     try {
       const ctx = getContext();
       const character = ctx.characters[ctx.characterId];
-      
+
       return {
         characterId: ctx.characterId || 'default',
         characterName: character?.name || 'unknown',
@@ -370,7 +350,6 @@ window.__uploadImageByPlugin = async function (imageFile, processingOptions = {}
       url: result.url,
       info: result.metadata,
     };
-
   } catch (error) {
     console.error('[Visual Bridge] 处理失败:', error.message);
     throw new Error(`图像处理失败: ${error.message}`);
@@ -386,7 +365,7 @@ class ConfigManager {
       if (Object.keys(pluginConfig).length === 0) {
         Object.assign(pluginConfig, CONFIG_DEFAULTS);
       }
-      
+
       this.updateInterface();
       console.log('[Visual Bridge] 配置加载完成');
     } catch (error) {
@@ -413,7 +392,7 @@ const EventManager = {
   onToggleActive(event) {
     pluginConfig.active = Boolean($(event.target).prop('checked'));
     ConfigManager.saveConfig();
-    
+
     const status = pluginConfig.active ? '已启用' : '已禁用';
     toastr.info(`Visual Bridge ${status}`, 'kencuo插件');
   },
@@ -447,7 +426,6 @@ jQuery(async () => {
 
     console.log('[Visual Bridge] 启动完成!');
     console.log('[Visual Bridge] GitHub: https://github.com/kencuo/chajian');
-
   } catch (error) {
     console.error('[Visual Bridge] 启动失败:', error);
   }
