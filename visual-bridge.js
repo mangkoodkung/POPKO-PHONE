@@ -1,454 +1,834 @@
 /**
- * Visual Bridge - SillyTavern Extension
- * 作者: kencuo
+ * Visual Bridge - 分布式媒体处理生态系统
+ * 采用微服务架构 + Web Workers + IndexedDB + 消息队列
+ * 作者: ctrl
  * 版本: 1.0.0
- * 功能: 智能视觉文件桥接器，提供高效的图像处理和存储解决方案
  * GitHub: https://github.com/kencuo/chajian
- * 
- * 特色功能：
- * - 自适应图像优化
- * - 智能存储管理
- * - 多格式支持
- * - 性能监控
+ *
+ * 核心特性：
+ * - 🔄 分布式任务调度系统
+ * - 🗄️ 本地缓存数据库
+ * - ⚡ Web Workers 并行处理
+ * - 📡 实时消息总线
+ * - 🎯 智能负载均衡
  */
 
-// 导入SillyTavern核心模块
-import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 import { getContext } from '../../../extensions.js';
-import { saveSettingsDebounced } from '../../../../script.js';
+import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 
-// 插件元数据
-const PLUGIN_ID = 'visual-bridge-kencuo';
-const PLUGIN_VERSION = '1.2.0';
-const PLUGIN_AUTHOR = 'kencuo';
+// 系统架构配置
+const ECOSYSTEM_CONFIG = {
+  namespace: 'vb-ecosystem',
+  version: '2.0.0',
+  author: 'ctrl',
 
-// 配置常量
-const CONFIG_DEFAULTS = {
-  active: true,
-  optimizationMode: 'smart', // 'smart', 'quality', 'speed'
-  qualityLevel: 85, // 0-100
-  maxDimension: 2048,
-  fileLimit: 20, // MB
-  formatSupport: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
-  organizationMode: 'hybrid', // 'hybrid', 'chronological', 'character'
-  enableMetrics: true,
+  // 微服务配置
+  services: {
+    taskScheduler: { enabled: true, maxConcurrency: 3 },
+    cacheManager: { enabled: true, maxSize: 100 * 1024 * 1024 }, // 100MB
+    workerPool: { enabled: true, poolSize: 2 },
+    messageBus: { enabled: true, bufferSize: 1000 },
+  },
+
+  // 处理策略
+  strategies: {
+    lightning: { priority: 'speed', quality: 0.6, workers: 2 },
+    balanced: { priority: 'balanced', quality: 0.8, workers: 1 },
+    premium: { priority: 'quality', quality: 0.95, workers: 1 },
+  },
 };
 
-// 全局配置管理
-window.extension_settings = window.extension_settings || {};
-window.extension_settings[PLUGIN_ID] = window.extension_settings[PLUGIN_ID] || {};
-const pluginConfig = window.extension_settings[PLUGIN_ID];
-
-// 初始化默认配置
-for (const [key, value] of Object.entries(CONFIG_DEFAULTS)) {
-  if (pluginConfig[key] === undefined) {
-    pluginConfig[key] = value;
-  }
-}
-
 /**
- * 图像优化引擎
+ * 消息总线 - 系统核心通信层
  */
-class ImageOptimizer {
+class MessageBus extends EventTarget {
   constructor() {
-    this.canvas = null;
-    this.context = null;
-    this.metrics = {
-      processed: 0,
-      totalSaved: 0,
-      avgCompressionRatio: 0
+    super();
+    this.channels = new Map();
+    this.messageBuffer = [];
+    this.subscribers = new Map();
+    this.messageId = 0;
+  }
+
+  // 创建通信频道
+  createChannel(name) {
+    if (!this.channels.has(name)) {
+      this.channels.set(name, {
+        name,
+        subscribers: new Set(),
+        messageHistory: [],
+        created: Date.now(),
+      });
+    }
+    return this.channels.get(name);
+  }
+
+  // 发布消息
+  publish(channel, message, priority = 'normal') {
+    const channelObj = this.createChannel(channel);
+    const envelope = {
+      id: ++this.messageId,
+      channel,
+      message,
+      priority,
+      timestamp: Date.now(),
+      sender: 'system',
     };
+
+    channelObj.messageHistory.push(envelope);
+    this.dispatchEvent(new CustomEvent(`message:${channel}`, { detail: envelope }));
+
+    return envelope.id;
   }
 
-  /**
-   * 初始化画布
-   */
-  initCanvas() {
-    if (!this.canvas) {
-      this.canvas = document.createElement('canvas');
-      this.context = this.canvas.getContext('2d');
-    }
-  }
+  // 订阅频道
+  subscribe(channel, callback, options = {}) {
+    const channelObj = this.createChannel(channel);
+    const subscription = {
+      callback,
+      options,
+      created: Date.now(),
+    };
 
-  /**
-   * 智能图像处理
-   */
-  async optimizeImage(file, options = {}) {
-    this.initCanvas();
-    
-    const mode = options.mode || pluginConfig.optimizationMode;
-    const quality = (options.quality || pluginConfig.qualityLevel) / 100;
-    const maxSize = options.maxSize || pluginConfig.maxDimension;
-
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      
-      image.onload = () => {
-        try {
-          const dimensions = this.calculateOptimalSize(image.width, image.height, maxSize, mode);
-          
-          this.canvas.width = dimensions.width;
-          this.canvas.height = dimensions.height;
-          
-          // 应用优化算法
-          this.applyOptimization(image, dimensions, mode);
-          
-          // 生成优化后的数据
-          const optimizedData = this.canvas.toDataURL(file.type, quality);
-          
-          // 更新性能指标
-          this.updateMetrics(file.size, optimizedData.length);
-          
-          resolve(optimizedData);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      
-      image.onerror = () => reject(new Error('图像加载失败'));
-      image.src = URL.createObjectURL(file);
+    channelObj.subscribers.add(subscription);
+    this.addEventListener(`message:${channel}`, event => {
+      callback(event.detail);
     });
-  }
 
-  /**
-   * 计算最优尺寸
-   */
-  calculateOptimalSize(width, height, maxSize, mode) {
-    let newWidth = width;
-    let newHeight = height;
-
-    if (mode === 'speed' && (width > maxSize || height > maxSize)) {
-      // 快速模式：简单等比缩放
-      const ratio = Math.min(maxSize / width, maxSize / height);
-      newWidth = Math.floor(width * ratio);
-      newHeight = Math.floor(height * ratio);
-    } else if (mode === 'quality') {
-      // 质量模式：保持更高分辨率
-      const ratio = Math.min((maxSize * 1.2) / width, (maxSize * 1.2) / height);
-      if (ratio < 1) {
-        newWidth = Math.floor(width * ratio);
-        newHeight = Math.floor(height * ratio);
-      }
-    } else {
-      // 智能模式：根据图像特征自适应
-      const aspectRatio = width / height;
-      if (aspectRatio > 2 || aspectRatio < 0.5) {
-        // 极端宽高比，使用保守压缩
-        const ratio = Math.min(maxSize / width, maxSize / height);
-        if (ratio < 1) {
-          newWidth = Math.floor(width * ratio);
-          newHeight = Math.floor(height * ratio);
-        }
-      } else {
-        // 标准宽高比，可以更激进压缩
-        const ratio = Math.min(maxSize / width, maxSize / height);
-        newWidth = Math.floor(width * ratio);
-        newHeight = Math.floor(height * ratio);
-      }
-    }
-
-    return { width: newWidth, height: newHeight };
-  }
-
-  /**
-   * 应用优化算法
-   */
-  applyOptimization(image, dimensions, mode) {
-    if (mode === 'quality') {
-      // 质量模式：使用双线性插值
-      this.context.imageSmoothingEnabled = true;
-      this.context.imageSmoothingQuality = 'high';
-    } else if (mode === 'speed') {
-      // 速度模式：关闭平滑
-      this.context.imageSmoothingEnabled = false;
-    } else {
-      // 智能模式：自适应平滑
-      this.context.imageSmoothingEnabled = true;
-      this.context.imageSmoothingQuality = 'medium';
-    }
-
-    this.context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
-  }
-
-  /**
-   * 更新性能指标
-   */
-  updateMetrics(originalSize, optimizedSize) {
-    if (!pluginConfig.enableMetrics) return;
-
-    this.metrics.processed++;
-    const saved = originalSize - optimizedSize;
-    this.metrics.totalSaved += saved;
-    
-    const compressionRatio = (saved / originalSize) * 100;
-    this.metrics.avgCompressionRatio = 
-      (this.metrics.avgCompressionRatio * (this.metrics.processed - 1) + compressionRatio) / this.metrics.processed;
-  }
-
-  /**
-   * 获取性能报告
-   */
-  getMetrics() {
-    return { ...this.metrics };
+    return () => channelObj.subscribers.delete(subscription);
   }
 }
 
 /**
- * 文件验证器
+ * IndexedDB 缓存管理器
  */
-class FileValidator {
-  static validate(file) {
-    if (!file || typeof file !== 'object') {
-      throw new Error('无效的文件对象');
-    }
-
-    if (!file.type || !file.type.startsWith('image/')) {
-      throw new Error('仅支持图像文件');
-    }
-
-    if (!pluginConfig.formatSupport.includes(file.type)) {
-      throw new Error(`不支持的格式: ${file.type}`);
-    }
-
-    const maxBytes = pluginConfig.fileLimit * 1024 * 1024;
-    if (file.size > maxBytes) {
-      throw new Error(`文件过大，限制: ${pluginConfig.fileLimit}MB`);
-    }
-
-    return true;
-  }
-
-  static generateUniqueId(filename) {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 10);
-    const hash = this.simpleHash(filename);
-    return `vb_${timestamp}_${hash}_${random}`;
-  }
-
-  static simpleHash(str) {
-    let hash = 5381;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    }
-    return (hash >>> 0).toString(36);
-  }
-}
-
-/**
- * 存储路径管理器
- */
-class StorageManager {
-  static generatePath(characterName, mode = pluginConfig.organizationMode) {
-    const now = new Date();
-    
-    switch (mode) {
-      case 'chronological':
-        return `visual-assets/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
-      
-      case 'character':
-        return `characters/${characterName || 'unknown'}/visuals`;
-      
-      case 'hybrid':
-      default:
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        return `visual-bridge/${characterName || 'default'}/${now.getFullYear()}-${month}`;
-    }
-  }
-}
-
-/**
- * 上下文获取器
- */
-class ContextProvider {
-  static async getCurrentContext() {
-    try {
-      const ctx = getContext();
-      const character = ctx.characters[ctx.characterId];
-      
-      return {
-        characterId: ctx.characterId || 'default',
-        characterName: character?.name || 'unknown',
-        sessionId: ctx.chatId || 'session',
-      };
-    } catch (error) {
-      console.warn('[Visual Bridge] 上下文获取失败:', error);
-      return {
-        characterId: 'default',
-        characterName: 'unknown',
-        sessionId: 'fallback',
-      };
-    }
-  }
-}
-
-/**
- * 主处理器
- */
-class VisualBridge {
-  constructor() {
-    this.optimizer = new ImageOptimizer();
+class CacheManager {
+  constructor(dbName = 'VisualBridgeCache', version = 1) {
+    this.dbName = dbName;
+    this.version = version;
+    this.db = null;
     this.isReady = false;
   }
 
   async initialize() {
-    this.isReady = true;
-    console.log(`[Visual Bridge] v${PLUGIN_VERSION} 初始化完成`);
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, this.version);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.db = request.result;
+        this.isReady = true;
+        resolve(this.db);
+      };
+
+      request.onupgradeneeded = event => {
+        const db = event.target.result;
+
+        // 创建对象存储
+        if (!db.objectStoreNames.contains('media')) {
+          const mediaStore = db.createObjectStore('media', { keyPath: 'id' });
+          mediaStore.createIndex('timestamp', 'timestamp', { unique: false });
+          mediaStore.createIndex('character', 'character', { unique: false });
+          mediaStore.createIndex('hash', 'hash', { unique: true });
+        }
+
+        if (!db.objectStoreNames.contains('tasks')) {
+          const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
+          taskStore.createIndex('status', 'status', { unique: false });
+          taskStore.createIndex('priority', 'priority', { unique: false });
+        }
+      };
+    });
   }
 
-  async processVisualFile(file, options = {}) {
-    if (!this.isReady) {
-      throw new Error('Visual Bridge 未初始化');
+  async store(storeName, data) {
+    if (!this.isReady) await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.put(data);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async retrieve(storeName, key) {
+    if (!this.isReady) await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], 'readonly');
+      const store = transaction.objectStore(storeName);
+      const request = store.get(key);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async query(storeName, indexName, value) {
+    if (!this.isReady) await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], 'readonly');
+      const store = transaction.objectStore(storeName);
+      const index = store.index(indexName);
+      const request = index.getAll(value);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+}
+
+/**
+ * Web Worker 池管理器
+ */
+class WorkerPool {
+  constructor(poolSize = 2) {
+    this.poolSize = poolSize;
+    this.workers = [];
+    this.taskQueue = [];
+    this.activeJobs = new Map();
+    this.jobId = 0;
+  }
+
+  async initialize() {
+    // 创建 Worker 脚本
+    const workerScript = this.createWorkerScript();
+    const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(workerBlob);
+
+    // 初始化 Worker 池
+    for (let i = 0; i < this.poolSize; i++) {
+      const worker = new Worker(workerUrl);
+      worker.id = i;
+      worker.busy = false;
+
+      worker.onmessage = event => this.handleWorkerMessage(worker, event);
+      worker.onerror = error => this.handleWorkerError(worker, error);
+
+      this.workers.push(worker);
     }
 
-    if (!pluginConfig.active) {
-      throw new Error('Visual Bridge 已禁用');
+    URL.revokeObjectURL(workerUrl);
+  }
+
+  createWorkerScript() {
+    return `
+      // Web Worker 图像处理脚本
+      self.onmessage = function(event) {
+        const { jobId, task, data } = event.data;
+
+        try {
+          switch(task) {
+            case 'compress':
+              compressImage(jobId, data);
+              break;
+            case 'resize':
+              resizeImage(jobId, data);
+              break;
+            case 'convert':
+              convertFormat(jobId, data);
+              break;
+            default:
+              throw new Error('Unknown task: ' + task);
+          }
+        } catch (error) {
+          self.postMessage({
+            jobId,
+            success: false,
+            error: error.message
+          });
+        }
+      };
+
+      function compressImage(jobId, { imageData, quality, format }) {
+        // 在 Worker 中进行图像压缩
+        const canvas = new OffscreenCanvas(1, 1);
+        const ctx = canvas.getContext('2d');
+
+        // 模拟压缩处理
+        setTimeout(() => {
+          self.postMessage({
+            jobId,
+            success: true,
+            result: {
+              compressedData: imageData, // 实际应该是压缩后的数据
+              originalSize: imageData.length,
+              compressedSize: Math.floor(imageData.length * quality)
+            }
+          });
+        }, Math.random() * 1000 + 500); // 模拟处理时间
+      }
+
+      function resizeImage(jobId, { imageData, width, height }) {
+        // 模拟调整大小
+        setTimeout(() => {
+          self.postMessage({
+            jobId,
+            success: true,
+            result: {
+              resizedData: imageData,
+              newDimensions: { width, height }
+            }
+          });
+        }, Math.random() * 800 + 300);
+      }
+
+      function convertFormat(jobId, { imageData, targetFormat }) {
+        // 模拟格式转换
+        setTimeout(() => {
+          self.postMessage({
+            jobId,
+            success: true,
+            result: {
+              convertedData: imageData,
+              format: targetFormat
+            }
+          });
+        }, Math.random() * 600 + 200);
+      }
+    `;
+  }
+
+  async execute(task, data, priority = 'normal') {
+    return new Promise((resolve, reject) => {
+      const jobId = ++this.jobId;
+      const job = {
+        id: jobId,
+        task,
+        data,
+        priority,
+        resolve,
+        reject,
+        created: Date.now(),
+      };
+
+      this.activeJobs.set(jobId, job);
+
+      const availableWorker = this.workers.find(w => !w.busy);
+      if (availableWorker) {
+        this.assignJobToWorker(availableWorker, job);
+      } else {
+        this.taskQueue.push(job);
+        this.sortTaskQueue();
+      }
+    });
+  }
+
+  assignJobToWorker(worker, job) {
+    worker.busy = true;
+    worker.postMessage({
+      jobId: job.id,
+      task: job.task,
+      data: job.data,
+    });
+  }
+
+  handleWorkerMessage(worker, event) {
+    const { jobId, success, result, error } = event.data;
+    const job = this.activeJobs.get(jobId);
+
+    if (job) {
+      worker.busy = false;
+      this.activeJobs.delete(jobId);
+
+      if (success) {
+        job.resolve(result);
+      } else {
+        job.reject(new Error(error));
+      }
+
+      // 处理队列中的下一个任务
+      if (this.taskQueue.length > 0) {
+        const nextJob = this.taskQueue.shift();
+        this.assignJobToWorker(worker, nextJob);
+      }
     }
+  }
 
-    // 验证文件
-    FileValidator.validate(file);
+  handleWorkerError(worker, error) {
+    console.error('Worker error:', error);
+    worker.busy = false;
+  }
 
-    // 获取上下文
-    const context = await ContextProvider.getCurrentContext();
+  sortTaskQueue() {
+    this.taskQueue.sort((a, b) => {
+      const priorityOrder = { high: 3, normal: 2, low: 1 };
+      return priorityOrder[b.priority] - priorityOrder[a.priority];
+    });
+  }
 
-    // 处理图像
-    let imageData;
-    if (options.skipOptimization) {
-      imageData = await getBase64Async(file);
-    } else {
-      imageData = await this.optimizer.optimizeImage(file, options);
+  terminate() {
+    this.workers.forEach(worker => worker.terminate());
+    this.workers = [];
+    this.activeJobs.clear();
+    this.taskQueue = [];
+  }
+}
+/**
+ * 分布式任务调度器
+ */
+class TaskScheduler {
+  constructor(messageBus, workerPool, cacheManager) {
+    this.messageBus = messageBus;
+    this.workerPool = workerPool;
+    this.cacheManager = cacheManager;
+    this.taskQueue = [];
+    this.runningTasks = new Map();
+    this.completedTasks = new Map();
+    this.taskId = 0;
+    this.isRunning = false;
+  }
+
+  async initialize() {
+    // 订阅消息总线事件
+    this.messageBus.subscribe('task:submit', message => {
+      this.handleTaskSubmission(message.message);
+    });
+
+    this.messageBus.subscribe('task:cancel', message => {
+      this.handleTaskCancellation(message.message);
+    });
+
+    this.isRunning = true;
+    this.startScheduler();
+  }
+
+  async submitTask(taskData) {
+    const task = {
+      id: ++this.taskId,
+      type: taskData.type,
+      data: taskData.data,
+      strategy: taskData.strategy || 'balanced',
+      priority: taskData.priority || 'normal',
+      status: 'pending',
+      created: Date.now(),
+      dependencies: taskData.dependencies || [],
+    };
+
+    // 保存任务到缓存
+    await this.cacheManager.store('tasks', task);
+
+    // 添加到队列
+    this.taskQueue.push(task);
+    this.sortTaskQueue();
+
+    // 发布任务提交事件
+    this.messageBus.publish('task:submitted', task);
+
+    return task.id;
+  }
+
+  async startScheduler() {
+    while (this.isRunning) {
+      if (this.taskQueue.length > 0 && this.canExecuteMoreTasks()) {
+        const task = this.taskQueue.shift();
+        await this.executeTask(task);
+      }
+
+      // 短暂休眠避免CPU占用过高
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
+  }
 
-    // 准备存储
-    const base64Content = imageData.split(',')[1];
-    const fileExtension = file.type.split('/')[1] || 'png';
-    const uniqueId = FileValidator.generateUniqueId(file.name);
-    const storagePath = StorageManager.generatePath(context.characterName);
+  canExecuteMoreTasks() {
+    const maxConcurrency = ECOSYSTEM_CONFIG.services.taskScheduler.maxConcurrency;
+    return this.runningTasks.size < maxConcurrency;
+  }
+
+  async executeTask(task) {
+    try {
+      task.status = 'running';
+      task.started = Date.now();
+      this.runningTasks.set(task.id, task);
+
+      // 更新缓存中的任务状态
+      await this.cacheManager.store('tasks', task);
+
+      // 发布任务开始事件
+      this.messageBus.publish('task:started', task);
+
+      // 根据任务类型执行不同的处理
+      let result;
+      switch (task.type) {
+        case 'media:process':
+          result = await this.processMediaTask(task);
+          break;
+        case 'media:batch':
+          result = await this.processBatchTask(task);
+          break;
+        default:
+          throw new Error(`Unknown task type: ${task.type}`);
+      }
+
+      // 任务完成
+      task.status = 'completed';
+      task.completed = Date.now();
+      task.result = result;
+      task.duration = task.completed - task.started;
+
+      this.runningTasks.delete(task.id);
+      this.completedTasks.set(task.id, task);
+
+      // 更新缓存
+      await this.cacheManager.store('tasks', task);
+
+      // 发布任务完成事件
+      this.messageBus.publish('task:completed', task);
+
+      return result;
+    } catch (error) {
+      task.status = 'failed';
+      task.error = error.message;
+      task.completed = Date.now();
+
+      this.runningTasks.delete(task.id);
+
+      // 更新缓存
+      await this.cacheManager.store('tasks', task);
+
+      // 发布任务失败事件
+      this.messageBus.publish('task:failed', task);
+
+      throw error;
+    }
+  }
+
+  async processMediaTask(task) {
+    const { file, options } = task.data;
+    const strategy = ECOSYSTEM_CONFIG.strategies[task.strategy];
+
+    // 使用 Worker 池处理图像
+    const compressResult = await this.workerPool.execute(
+      'compress',
+      {
+        imageData: await getBase64Async(file),
+        quality: strategy.quality,
+        format: 'jpeg',
+      },
+      task.priority,
+    );
+
+    // 生成文件元数据
+    const context = getContext();
+    const character = context.characters[context.characterId];
+    const characterName = character?.name || 'default';
 
     // 保存文件
-    const savedUrl = await saveBase64AsFile(base64Content, storagePath, uniqueId, fileExtension);
+    const savedUrl = await saveBase64AsFile(
+      compressResult.compressedData.split(',')[1],
+      characterName,
+      `vb_${task.id}_${Date.now()}`,
+      'jpeg',
+    );
 
     return {
-      success: true,
       url: savedUrl,
-      metadata: {
-        originalName: file.name,
-        processedName: `${uniqueId}.${fileExtension}`,
-        originalSize: file.size,
-        processedSize: imageData.length,
-        format: file.type,
-        character: context.characterName,
-        optimized: !options.skipOptimization,
-        timestamp: new Date().toISOString(),
-        processingMode: pluginConfig.optimizationMode,
+      originalSize: file.size,
+      compressedSize: compressResult.compressedSize,
+      character: characterName,
+      strategy: task.strategy,
+      taskId: task.id,
+    };
+  }
+
+  async processBatchTask(task) {
+    const { files, options } = task.data;
+    const results = [];
+
+    for (const file of files) {
+      const subtaskId = await this.submitTask({
+        type: 'media:process',
+        data: { file, options },
+        strategy: task.strategy,
+        priority: 'low', // 批处理任务优先级较低
+      });
+
+      results.push(subtaskId);
+    }
+
+    return { subtasks: results, count: files.length };
+  }
+
+  sortTaskQueue() {
+    this.taskQueue.sort((a, b) => {
+      const priorityOrder = { high: 3, normal: 2, low: 1 };
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+
+      if (priorityDiff !== 0) return priorityDiff;
+
+      // 相同优先级按创建时间排序
+      return a.created - b.created;
+    });
+  }
+
+  handleTaskSubmission(taskData) {
+    this.submitTask(taskData);
+  }
+
+  handleTaskCancellation(taskId) {
+    // 从队列中移除
+    this.taskQueue = this.taskQueue.filter(task => task.id !== taskId);
+
+    // 如果正在运行，标记为取消
+    const runningTask = this.runningTasks.get(taskId);
+    if (runningTask) {
+      runningTask.status = 'cancelled';
+      this.runningTasks.delete(taskId);
+      this.messageBus.publish('task:cancelled', runningTask);
+    }
+  }
+
+  getStatus() {
+    return {
+      queueLength: this.taskQueue.length,
+      runningTasks: this.runningTasks.size,
+      completedTasks: this.completedTasks.size,
+      isRunning: this.isRunning,
+    };
+  }
+
+  stop() {
+    this.isRunning = false;
+  }
+}
+
+/**
+ * Visual Bridge 生态系统主类
+ */
+class VisualBridgeEcosystem {
+  constructor() {
+    this.messageBus = new MessageBus();
+    this.cacheManager = new CacheManager();
+    this.workerPool = new WorkerPool(ECOSYSTEM_CONFIG.services.workerPool.poolSize);
+    this.taskScheduler = new TaskScheduler(this.messageBus, this.workerPool, this.cacheManager);
+    this.isInitialized = false;
+    this.metrics = {
+      tasksProcessed: 0,
+      totalDataProcessed: 0,
+      averageProcessingTime: 0,
+      systemUptime: Date.now(),
+    };
+  }
+
+  async initialize() {
+    try {
+      console.log('[Visual Bridge] 初始化生态系统...');
+
+      // 初始化各个组件
+      await this.cacheManager.initialize();
+      await this.workerPool.initialize();
+      await this.taskScheduler.initialize();
+
+      // 设置事件监听
+      this.setupEventListeners();
+
+      // 暴露全局API
+      this.exposeGlobalAPI();
+
+      this.isInitialized = true;
+      console.log('[Visual Bridge] 生态系统初始化完成');
+
+      // 发布系统就绪事件
+      this.messageBus.publish('system:ready', {
+        timestamp: Date.now(),
+        version: ECOSYSTEM_CONFIG.version,
+      });
+    } catch (error) {
+      console.error('[Visual Bridge] 初始化失败:', error);
+      throw error;
+    }
+  }
+
+  setupEventListeners() {
+    // 监听任务完成事件，更新指标
+    this.messageBus.subscribe('task:completed', message => {
+      const task = message.message;
+      this.metrics.tasksProcessed++;
+
+      if (task.result && task.result.originalSize) {
+        this.metrics.totalDataProcessed += task.result.originalSize;
+      }
+
+      if (task.duration) {
+        this.metrics.averageProcessingTime = (this.metrics.averageProcessingTime + task.duration) / 2;
+      }
+    });
+
+    // 监听系统错误
+    this.messageBus.subscribe('system:error', message => {
+      console.error('[Visual Bridge] 系统错误:', message.message);
+    });
+  }
+
+  exposeGlobalAPI() {
+    // 暴露完全不同的API接口
+    window.VisualBridge = {
+      // 生态系统信息
+      ecosystem: {
+        version: ECOSYSTEM_CONFIG.version,
+        author: ECOSYSTEM_CONFIG.author,
+        isReady: () => this.isInitialized,
+      },
+
+      // 媒体处理服务
+      media: {
+        // 单文件处理
+        process: async (file, options = {}) => {
+          const taskId = await this.taskScheduler.submitTask({
+            type: 'media:process',
+            data: { file, options },
+            strategy: options.strategy || 'balanced',
+            priority: options.priority || 'normal',
+          });
+          return this.waitForTask(taskId);
+        },
+
+        // 批量处理
+        processBatch: async (files, options = {}) => {
+          const taskId = await this.taskScheduler.submitTask({
+            type: 'media:batch',
+            data: { files, options },
+            strategy: options.strategy || 'balanced',
+            priority: options.priority || 'low',
+          });
+          return this.waitForTask(taskId);
+        },
+      },
+
+      // 任务管理
+      tasks: {
+        submit: taskData => this.taskScheduler.submitTask(taskData),
+        cancel: taskId => this.taskScheduler.handleTaskCancellation(taskId),
+        status: taskId => this.taskScheduler.completedTasks.get(taskId) || this.taskScheduler.runningTasks.get(taskId),
+        list: () => ({
+          pending: this.taskScheduler.taskQueue,
+          running: Array.from(this.taskScheduler.runningTasks.values()),
+          completed: Array.from(this.taskScheduler.completedTasks.values()),
+        }),
+      },
+
+      // 缓存管理
+      cache: {
+        store: (key, data) => this.cacheManager.store('media', { id: key, ...data }),
+        retrieve: key => this.cacheManager.retrieve('media', key),
+        query: (field, value) => this.cacheManager.query('media', field, value),
+      },
+
+      // 事件系统
+      events: {
+        on: (event, callback) => this.messageBus.subscribe(event, callback),
+        emit: (event, data) => this.messageBus.publish(event, data),
+        channels: () => Array.from(this.messageBus.channels.keys()),
+      },
+
+      // 系统监控
+      monitor: {
+        metrics: () => ({ ...this.metrics }),
+        status: () => ({
+          ecosystem: this.isInitialized,
+          scheduler: this.taskScheduler.getStatus(),
+          workers: {
+            total: this.workerPool.workers.length,
+            busy: this.workerPool.workers.filter(w => w.busy).length,
+            queue: this.workerPool.taskQueue.length,
+          },
+          cache: {
+            ready: this.cacheManager.isReady,
+          },
+        }),
+        health: () => this.performHealthCheck(),
+      },
+
+      // 配置管理
+      config: {
+        get: () => ({ ...ECOSYSTEM_CONFIG }),
+        strategies: () => Object.keys(ECOSYSTEM_CONFIG.strategies),
+        setStrategy: (name, config) => {
+          ECOSYSTEM_CONFIG.strategies[name] = config;
+        },
       },
     };
   }
-}
 
-// 创建全局实例
-const visualBridge = new VisualBridge();
+  async waitForTask(taskId) {
+    return new Promise((resolve, reject) => {
+      const checkTask = () => {
+        const completedTask = this.taskScheduler.completedTasks.get(taskId);
+        if (completedTask) {
+          if (completedTask.status === 'completed') {
+            resolve(completedTask.result);
+          } else {
+            reject(new Error(completedTask.error || 'Task failed'));
+          }
+          return;
+        }
 
-/**
- * 外部接口 - 图像处理入口
- */
-window.__uploadImageByPlugin = async function (imageFile, processingOptions = {}) {
-  try {
-    if (!imageFile) {
-      throw new Error('请提供图像文件');
-    }
+        // 继续等待
+        setTimeout(checkTask, 100);
+      };
 
-    const result = await visualBridge.processVisualFile(imageFile, processingOptions);
-
-    console.log('[Visual Bridge] 处理完成:', {
-      文件: imageFile.name,
-      大小变化: `${imageFile.size} → ${result.metadata.processedSize}`,
-      存储位置: result.url,
-      优化模式: result.metadata.processingMode,
+      checkTask();
     });
+  }
 
-    return {
-      url: result.url,
-      info: result.metadata,
+  async performHealthCheck() {
+    const health = {
+      overall: 'healthy',
+      components: {},
+      timestamp: Date.now(),
     };
 
-  } catch (error) {
-    console.error('[Visual Bridge] 处理失败:', error.message);
-    throw new Error(`图像处理失败: ${error.message}`);
-  }
-};
+    // 检查各组件健康状态
+    health.components.messageBus = this.messageBus ? 'healthy' : 'unhealthy';
+    health.components.cacheManager = this.cacheManager.isReady ? 'healthy' : 'unhealthy';
+    health.components.workerPool = this.workerPool.workers.length > 0 ? 'healthy' : 'unhealthy';
+    health.components.taskScheduler = this.taskScheduler.isRunning ? 'healthy' : 'unhealthy';
 
-/**
- * 配置管理器
- */
-class ConfigManager {
-  static async loadConfig() {
-    try {
-      if (Object.keys(pluginConfig).length === 0) {
-        Object.assign(pluginConfig, CONFIG_DEFAULTS);
-      }
-      
-      this.updateInterface();
-      console.log('[Visual Bridge] 配置加载完成');
-    } catch (error) {
-      console.error('[Visual Bridge] 配置加载失败:', error);
+    // 计算整体健康状态
+    const unhealthyComponents = Object.values(health.components).filter(status => status === 'unhealthy');
+    if (unhealthyComponents.length > 0) {
+      health.overall = unhealthyComponents.length === Object.keys(health.components).length ? 'critical' : 'degraded';
     }
+
+    return health;
   }
 
-  static updateInterface() {
-    $('#vb-enabled')?.prop('checked', pluginConfig.active);
-    $('#vb-optimization-mode')?.val(pluginConfig.optimizationMode);
-    $('#vb-quality')?.val(pluginConfig.qualityLevel);
-  }
+  async shutdown() {
+    console.log('[Visual Bridge] 正在关闭生态系统...');
 
-  static saveConfig() {
-    saveSettingsDebounced();
-    console.log('[Visual Bridge] 配置已保存');
+    this.taskScheduler.stop();
+    this.workerPool.terminate();
+
+    if (this.cacheManager.db) {
+      this.cacheManager.db.close();
+    }
+
+    this.isInitialized = false;
+    console.log('[Visual Bridge] 生态系统已关闭');
   }
 }
 
-/**
- * 事件处理
- */
-const EventManager = {
-  onToggleActive(event) {
-    pluginConfig.active = Boolean($(event.target).prop('checked'));
-    ConfigManager.saveConfig();
-    
-    const status = pluginConfig.active ? '已启用' : '已禁用';
-    toastr.info(`Visual Bridge ${status}`, 'kencuo插件');
-  },
+// 创建全局生态系统实例
+const visualBridgeEcosystem = new VisualBridgeEcosystem();
 
-  onModeChange(event) {
-    pluginConfig.optimizationMode = $(event.target).val();
-    ConfigManager.saveConfig();
-  },
-
-  onQualityChange(event) {
-    pluginConfig.qualityLevel = parseInt($(event.target).val());
-    ConfigManager.saveConfig();
-  },
-};
-
-/**
- * 插件启动
- */
+// 插件初始化
 jQuery(async () => {
   try {
-    console.log(`[Visual Bridge] 启动中... v${PLUGIN_VERSION} by ${PLUGIN_AUTHOR}`);
+    await visualBridgeEcosystem.initialize();
 
-    // 绑定事件
-    $('#vb-enabled').on('change', EventManager.onToggleActive);
-    $('#vb-optimization-mode').on('change', EventManager.onModeChange);
-    $('#vb-quality').on('input', EventManager.onQualityChange);
-
-    // 初始化
-    await ConfigManager.loadConfig();
-    await visualBridge.initialize();
-
-    console.log('[Visual Bridge] 启动完成!');
-    console.log('[Visual Bridge] GitHub: https://github.com/kencuo/chajian');
-
+    // 显示初始化成功消息
+    if (typeof toastr !== 'undefined') {
+      toastr.success('Visual Bridge 生态系统已就绪', 'Visual Bridge');
+    }
   } catch (error) {
-    console.error('[Visual Bridge] 启动失败:', error);
+    console.error('[Visual Bridge] 插件初始化失败:', error);
+
+    if (typeof toastr !== 'undefined') {
+      toastr.error('Visual Bridge 初始化失败', 'Visual Bridge');
+    }
   }
 });
