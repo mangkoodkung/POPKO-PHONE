@@ -1,5 +1,5 @@
 {
-  "display_name": "累了，不想改bug了",
+  "display_name": "智能视觉文件桥接",
   "loading_order": 15,
   "requires": [],
   "optional": [],
@@ -9,6 +9,6 @@
   "version": "1.0.0",
   "homePage": "https://github.com/kencuo/chajian",
   "auto_update": true,
-  "description": "事件驱动的文件同步桥接器，采用队列处理和策略模式"
+  "description": "眼睛要花了"
 }
 
