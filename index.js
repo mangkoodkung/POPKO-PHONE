@@ -24,12 +24,6 @@ window.extension_settings[extensionName] =
     window.extension_settings[extensionName] || {};
 const extensionSettings = window.extension_settings[extensionName];
 
-/**
- * 暴露SillyTavern内置识图功能给外部应用
- * @param {File|string} input - 图片文件对象或base64字符串
- * @param {string} prompt - 识图提示词，默认为通用描述提示
- * @returns {Promise<{success: boolean, result: string, error?: string}>}
- */
 window.__visionAnalysisByTavern = async function (input, prompt = null) {
     try {
         // 检查插件是否启用
@@ -37,29 +31,28 @@ window.__visionAnalysisByTavern = async function (input, prompt = null) {
             throw new Error("视觉识图桥接器插件未启用");
         }
 
-        // 获取SillyTavern上下文
-        const ctx = getContext();
-        if (!ctx) {
-            throw new Error("无法获取SillyTavern上下文");
-        }
-
-        // 检查是否有可用的生成函数
-        if (typeof window.Generate === 'undefined' && typeof window.generateRaw === 'undefined') {
-            throw new Error("SillyTavern生成函数不可用");
+        // 验证输入
+        if (!input) {
+            throw new Error("请提供图片文件或base64数据");
         }
 
         let imageData;
 
         // 处理输入数据
         if (typeof input === 'string') {
-            // 如果是字符串，假设是base64数据
             imageData = input;
-        } else if (input && typeof input === 'object' && input.type && input.type.startsWith('image/')) {
-            // 如果是File对象，转换为base64
-            const base64Result = await getBase64Async(input);
-            imageData = base64Result;
+        } else if (input && typeof input === "object" && input.type && input.type.startsWith("image/")) {
+            // 使用SillyTavern的工具函数转换文件
+            const fileBase64 = await getBase64Async(input);
+            imageData = fileBase64;
         } else {
             throw new Error("无效的输入格式，请提供图片文件或base64字符串");
+        }
+
+        // 获取SillyTavern上下文
+        const ctx = window.SillyTavern.getContext();
+        if (!ctx) {
+            throw new Error("无法获取SillyTavern上下文");
         }
 
         // 默认识图提示词
@@ -70,33 +63,69 @@ window.__visionAnalysisByTavern = async function (input, prompt = null) {
         if (extension_settings[extensionName]?.debug_mode) {
             console.log('🔍 Vision Bridge: 开始识图分析');
             console.log('🔍 Vision Bridge: 提示词:', visionPrompt);
-            console.log('🔍 Vision Bridge: 图片数据长度:', imageData.length);
+            console.log('🔍 Vision Bridge: 图片数据类型:', typeof imageData);
         }
 
+        // 构建消息格式 - 尝试使用SillyTavern的标准消息格式
+        const messageData = {
+            name: 'System',
+            is_user: false,
+            is_system: true,
+            send_date: Date.now(),
+            mes: visionPrompt,
+            extra: {
+                image: imageData,
+                type: 'vision_analysis'
+            }
+        };
+
+        // 尝试调用SillyTavern的生成函数
         let response;
 
-        // 尝试使用generateRaw函数（更直接的API调用）
-        if (typeof window.generateRaw === 'function') {
-            const rawRequestData = {
+        // 方法1: 尝试使用全局的Generate函数
+        if (typeof window.Generate === 'function') {
+            response = await window.Generate(visionPrompt, {
+                image: imageData,
+                quiet: true,
+                force_name2: true
+            });
+        }
+        // 方法2: 尝试使用generateRaw函数
+        else if (typeof window.generateRaw === 'function') {
+            response = await window.generateRaw({
                 prompt: visionPrompt,
                 image: imageData,
-                stream: false,
-                use_mancer: false,
-                use_openrouter: false,
-            };
+                stream: false
+            });
+        }
+        // 方法3: 尝试通过事件系统触发
+        else if (window.eventSource) {
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('识图请求超时'));
+                }, 30000);
 
-            response = await window.generateRaw(rawRequestData);
-        } 
-        // 回退到Generate函数
-        else if (typeof window.Generate === 'function') {
-            const requestData = {
-                prompt: visionPrompt,
-                image: imageData,
-                stream: false,
-            };
+                window.eventSource.once('generation_ended', (data) => {
+                    clearTimeout(timeout);
+                    if (data && data.text) {
+                        resolve({
+                            success: true,
+                            result: data.text.trim(),
+                            timestamp: Date.now()
+                        });
+                    } else {
+                        reject(new Error('生成结果为空'));
+                    }
+                });
 
-            response = await window.Generate(requestData);
-        } else {
+                // 触发生成事件
+                window.eventSource.emit('generation_started', {
+                    prompt: visionPrompt,
+                    image: imageData
+                });
+            });
+        }
+        else {
             throw new Error("没有可用的生成函数");
         }
 
@@ -139,12 +168,14 @@ window.__getVisionBridgeInfo = function() {
         version: "1.0.0",
         enabled: extension_settings[extensionName]?.plugin_enabled || false,
         debugMode: extension_settings[extensionName]?.debug_mode || false,
-        hasGenerateRaw: typeof window.generateRaw === 'function',
         hasGenerate: typeof window.Generate === 'function',
-        contextAvailable: !!getContext()
+        hasGenerateRaw: typeof window.generateRaw === 'function',
+        hasEventSource: !!window.eventSource,
+        contextAvailable: !!(window.SillyTavern?.getContext?.())
     };
 };
 
+// 设置管理函数
 async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
     if (Object.keys(extension_settings[extensionName]).length === 0) {
@@ -184,8 +215,9 @@ function onTestButtonClick() {
     const statusText = `
 插件状态: ${info.enabled ? '已启用' : '已禁用'}
 调试模式: ${info.debugMode ? '开启' : '关闭'}
-generateRaw函数: ${info.hasGenerateRaw ? '可用' : '不可用'}
 Generate函数: ${info.hasGenerate ? '可用' : '不可用'}
+generateRaw函数: ${info.hasGenerateRaw ? '可用' : '不可用'}
+事件系统: ${info.hasEventSource ? '可用' : '不可用'}
 SillyTavern上下文: ${info.contextAvailable ? '可用' : '不可用'}
     `.trim();
 
