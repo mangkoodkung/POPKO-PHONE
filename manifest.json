@@ -1,12 +1,13 @@
 {
-  "display_name": "能识图吗",
-  "loading_order": 9,
+  "display_name": "视觉识图桥接器",
+  "loading_order": 10,
   "requires": [],
   "optional": [],
   "js": "index.js",
   "css": "",
-  "author": "ctrl",
+  "author": "kencuo",
   "version": "1.0.0",
   "homePage": "https://github.com/kencuo/chajian",
-  "auto_update": true
+  "auto_update": true,
+  "description": "为外部应用提供SillyTavern内置视觉识图功能的桥接接口"
 }
