@@ -1,0 +1,212 @@
+<!-- Visual Bridge Extension Settings -->
+<!-- 作者: kencuo -->
+<!-- GitHub: https://github.com/kencuo/chajian -->
+
+<div class="visual-bridge-container">
+  <div class="vb-header">
+    <h3>🌉 智能视觉桥接器</h3>
+    <span class="vb-badge">v1.2.0</span>
+    <span class="vb-version">by kencuo</span>
+  </div>
+
+  <div class="vb-config-grid">
+    <!-- 基础设置 -->
+    <div class="vb-config-card">
+      <h4>基础配置</h4>
+      
+      <div class="vb-form-group">
+        <label class="vb-label">
+          启用插件
+          <span class="vb-badge">核心</span>
+        </label>
+        <label class="vb-toggle">
+          <input type="checkbox" id="vb-enabled" checked>
+          <span class="vb-slider"></span>
+        </label>
+        <div class="vb-help-text">
+          开启后将提供图像处理和存储功能
+        </div>
+      </div>
+
+      <div class="vb-form-group">
+        <label class="vb-label" for="vb-optimization-mode">优化模式</label>
+        <select id="vb-optimization-mode" class="vb-select">
+          <option value="smart">智能模式 (推荐)</option>
+          <option value="quality">质量优先</option>
+          <option value="speed">速度优先</option>
+        </select>
+        <div class="vb-help-text">
+          智能模式会根据图像特征自动选择最佳处理方式
+        </div>
+      </div>
+    </div>
+
+    <!-- 图像优化 -->
+    <div class="vb-config-card">
+      <h4>图像优化</h4>
+      
+      <div class="vb-form-group">
+        <label class="vb-label" for="vb-quality">
+          压缩质量: <span id="vb-quality-value">85</span>%
+        </label>
+        <div class="vb-range-container">
+          <input type="range" id="vb-quality" class="vb-range" min="10" max="100" value="85" step="5">
+          <div class="vb-range-value" id="vb-quality-display">85%</div>
+        </div>
+        <div class="vb-help-text">
+          较高的值保持更好的图像质量，但文件更大
+        </div>
+      </div>
+
+      <div class="vb-form-group">
+        <label class="vb-label" for="vb-max-dimension">最大尺寸 (像素)</label>
+        <select id="vb-max-dimension" class="vb-select">
+          <option value="1024">1024px (标准)</option>
+          <option value="1536">1536px (高清)</option>
+          <option value="2048" selected>2048px (超清)</option>
+          <option value="4096">4096px (原始)</option>
+        </select>
+        <div class="vb-help-text">
+          图像的最大宽度或高度限制
+        </div>
+      </div>
+    </div>
+
+    <!-- 存储管理 -->
+    <div class="vb-config-card">
+      <h4>存储管理</h4>
+      
+      <div class="vb-form-group">
+        <label class="vb-label" for="vb-organization">组织方式</label>
+        <select id="vb-organization" class="vb-select">
+          <option value="hybrid" selected>混合模式 (角色+时间)</option>
+          <option value="character">按角色分类</option>
+          <option value="chronological">按时间分类</option>
+        </select>
+        <div class="vb-help-text">
+          决定文件在存储系统中的组织结构
+        </div>
+      </div>
+
+      <div class="vb-form-group">
+        <label class="vb-label" for="vb-file-limit">文件大小限制 (MB)</label>
+        <select id="vb-file-limit" class="vb-select">
+          <option value="10">10 MB</option>
+          <option value="20" selected>20 MB</option>
+          <option value="50">50 MB</option>
+          <option value="100">100 MB</option>
+        </select>
+        <div class="vb-help-text">
+          超过此大小的文件将被拒绝处理
+        </div>
+      </div>
+    </div>
+
+    <!-- 高级选项 -->
+    <div class="vb-config-card">
+      <h4>高级选项</h4>
+      
+      <div class="vb-form-group">
+        <label class="vb-label">
+          性能监控
+          <span class="vb-badge">分析</span>
+        </label>
+        <label class="vb-toggle">
+          <input type="checkbox" id="vb-metrics" checked>
+          <span class="vb-slider"></span>
+        </label>
+        <div class="vb-help-text">
+          收集处理统计信息以优化性能
+        </div>
+      </div>
+
+      <div class="vb-form-group">
+        <label class="vb-label">支持的格式</label>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+          <span class="vb-badge">JPEG</span>
+          <span class="vb-badge">PNG</span>
+          <span class="vb-badge">WebP</span>
+          <span class="vb-badge">GIF</span>
+        </div>
+        <div class="vb-help-text">
+          当前支持的图像格式列表
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="vb-status-bar">
+    <div class="vb-status-item">
+      <div class="vb-status-label">状态</div>
+      <div class="vb-status-value" id="vb-status">就绪</div>
+    </div>
+    <div class="vb-status-item">
+      <div class="vb-status-label">已处理</div>
+      <div class="vb-status-value" id="vb-processed">0</div>
+    </div>
+    <div class="vb-status-item">
+      <div class="vb-status-label">节省空间</div>
+      <div class="vb-status-value" id="vb-saved">0 KB</div>
+    </div>
+    <div class="vb-status-item">
+      <div class="vb-status-label">压缩率</div>
+      <div class="vb-status-value" id="vb-compression">0%</div>
+    </div>
+  </div>
+
+  <!-- 性能指标 -->
+  <div id="vb-metrics-panel" style="display: none;">
+    <div class="vb-metrics-grid">
+      <div class="vb-metric-card">
+        <div class="vb-metric-value" id="metric-total-files">0</div>
+        <div class="vb-metric-label">总文件数</div>
+      </div>
+      <div class="vb-metric-card">
+        <div class="vb-metric-value" id="metric-total-size">0 MB</div>
+        <div class="vb-metric-label">总大小</div>
+      </div>
+      <div class="vb-metric-card">
+        <div class="vb-metric-value" id="metric-avg-time">0ms</div>
+        <div class="vb-metric-label">平均处理时间</div>
+      </div>
+      <div class="vb-metric-card">
+        <div class="vb-metric-value" id="metric-success-rate">100%</div>
+        <div class="vb-metric-label">成功率</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部信息 -->
+  <div style="text-align: center; margin-top: 20px; opacity: 0.8;">
+    <small>
+      🚀 <strong>Visual Bridge</strong> v1.2.0 | 
+      👨‍💻 作者: <a href="https://github.com/kencuo/chajian" target="_blank" style="color: white; text-decoration: none;">kencuo</a> | 
+      📖 <a href="https://github.com/kencuo/chajian/wiki" target="_blank" style="color: white; text-decoration: none;">使用文档</a>
+    </small>
+  </div>
+</div>
+
+<script>
+// 实时更新质量值显示
+document.getElementById('vb-quality').addEventListener('input', function(e) {
+  const value = e.target.value;
+  document.getElementById('vb-quality-value').textContent = value;
+  document.getElementById('vb-quality-display').textContent = value + '%';
+});
+
+// 切换性能指标面板
+document.getElementById('vb-metrics').addEventListener('change', function(e) {
+  const panel = document.getElementById('vb-metrics-panel');
+  panel.style.display = e.target.checked ? 'block' : 'none';
+});
+
+// 模拟状态更新 (实际会由主JS文件处理)
+function updateStatus() {
+  // 这里会被主插件文件的实际逻辑替换
+  console.log('[Visual Bridge] 配置界面已加载');
+}
+
+// 初始化
+document.addEventListener('DOMContentLoaded', updateStatus);
+</script>
