@@ -1,13 +1,14 @@
 {
-  "display_name": "不知道有没有bug，有的话请抽打ctrl",
+  "display_name": "累了，不想改bug了",
   "loading_order": 15,
   "requires": [],
   "optional": [],
-  "js": "visual-bridge.js",
-  "css": "visual-bridge.css",
-  "author": "ctrl",
+  "js": "filesync-bridge.js",
+  "css": "filesync-bridge.css",
+  "author": "kencuo",
   "version": "1.0.0",
   "homePage": "https://github.com/kencuo/chajian",
   "auto_update": true,
-  "description": "基于微服务架构的分布式媒体处理生态系统，采用Web Workers、IndexedDB和消息队列技术"
+  "description": "事件驱动的文件同步桥接器，采用队列处理和策略模式"
 }
+
