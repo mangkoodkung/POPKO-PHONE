@@ -661,49 +661,170 @@ async function callSillyTavernAI(prompt, context = {}) {
         ? top.generate
         : null;
 
-    if (!AI_GENERATE) {
+    // 获取generateRaw函数（用于直接生成回复）
+    const AI_GENERATE_RAW =
+      typeof generateRaw === 'function'
+        ? generateRaw
+        : window.parent && window.parent.generateRaw
+        ? window.parent.generateRaw
+        : top && top.generateRaw
+        ? top.generateRaw
+        : null;
+
+    if (!AI_GENERATE && !AI_GENERATE_RAW) {
       throw new Error('SillyTavern AI接口不可用');
     }
 
-    // 构建请求数据
-    const requestData = {
-      injects: [
-        {
-          role: 'system',
-          content: prompt,
-          position: 'in_chat',
-          depth: 0,
-          should_scan: true,
-        },
-      ],
-      should_stream: false, // 文档分析不需要流式输出
-      user_input: context.fileName ? `正在分析文档: ${context.fileName}` : '正在分析文档',
-    };
-
-    // 如果有文档内容，添加到上下文中
+    // 构建完整的分析提示
+    let fullPrompt = prompt;
     if (context.documentContent) {
-      requestData.injects.push({
-        role: 'user',
-        content: `文档内容：\n${context.documentContent}`,
-        position: 'in_chat',
-        depth: 1,
-        should_scan: true,
-      });
+      fullPrompt += `\n\n文档内容：\n${context.documentContent}`;
+    }
+    if (context.fileName) {
+      fullPrompt += `\n\n文件名：${context.fileName}`;
     }
 
     console.log('[SillyTavern AI] 发送文档分析请求...');
-    const result = await AI_GENERATE(requestData);
 
-    if (result && typeof result === 'string') {
-      return result;
-    } else if (result && result.content) {
-      return result.content;
-    } else {
-      throw new Error('AI返回格式异常');
+    // 优先使用generateRaw，它更适合直接生成回复
+    if (AI_GENERATE_RAW) {
+      const result = await AI_GENERATE_RAW(fullPrompt, false, false, '', '');
+      if (result && typeof result === 'string') {
+        return result;
+      }
     }
+
+    // 备用方案：使用generate函数
+    if (AI_GENERATE) {
+      const requestData = {
+        prompt: fullPrompt,
+        use_default_jailbreak: false,
+        force_name2: true,
+        quiet_prompt: true,
+        quiet_image: true,
+        skip_examples: false,
+        top_a: 0,
+        rep_pen: 1.1,
+        rep_pen_range: 1024,
+        rep_pen_slope: 0.9,
+        temperature: 0.7,
+        tfs: 1,
+        top_k: 0,
+        top_p: 0.9,
+        typical: 1,
+        sampler_order: [6, 0, 1, 3, 4, 2, 5],
+        singleline: false,
+      };
+
+      const result = await AI_GENERATE('', requestData);
+      if (result && typeof result === 'string') {
+        return result;
+      } else if (result && result.content) {
+        return result.content;
+      }
+    }
+
+    throw new Error('AI返回格式异常');
   } catch (error) {
     console.error('[SillyTavern AI] 调用失败:', error);
     throw error;
+  }
+}
+
+/**
+ * 发送AI分析结果到聊天
+ */
+async function sendAnalysisToChat(analysisResult, fileName, context) {
+  try {
+    // 获取SillyTavern的聊天函数
+    const addOneMessage =
+      typeof window.addOneMessage === 'function'
+        ? window.addOneMessage
+        : window.parent && typeof window.parent.addOneMessage === 'function'
+        ? window.parent.addOneMessage
+        : top && typeof top.addOneMessage === 'function'
+        ? top.addOneMessage
+        : null;
+
+    const sendSystemMessage =
+      typeof window.sendSystemMessage === 'function'
+        ? window.sendSystemMessage
+        : window.parent && typeof window.parent.sendSystemMessage === 'function'
+        ? window.parent.sendSystemMessage
+        : top && typeof top.sendSystemMessage === 'function'
+        ? top.sendSystemMessage
+        : null;
+
+    if (addOneMessage) {
+      // 构建消息内容
+      const messageContent = `📄 **文档分析结果** (${fileName})\n\n${analysisResult}`;
+
+      // 添加助手消息到聊天
+      await addOneMessage({
+        name: context.characterName || 'Assistant',
+        is_user: false,
+        is_system: false,
+        send_date: new Date().toISOString(),
+        mes: messageContent,
+        extra: {
+          type: 'document_analysis',
+          file_name: fileName,
+          processed_by: 'smart_media_assistant',
+        },
+      });
+
+      console.log('[Chat Integration] AI分析结果已发送到聊天');
+    } else if (sendSystemMessage) {
+      // 备用方案：发送系统消息
+      await sendSystemMessage('system', `📄 文档分析完成：${fileName}\n\n${analysisResult}`);
+      console.log('[Chat Integration] AI分析结果已作为系统消息发送');
+    } else {
+      console.warn('[Chat Integration] 无法找到聊天发送函数');
+    }
+  } catch (error) {
+    console.error('[Chat Integration] 发送分析结果失败:', error);
+  }
+}
+
+/**
+ * 发送原始文档内容到聊天
+ */
+async function sendDocumentToChat(content, fileName, context) {
+  try {
+    const addOneMessage =
+      typeof window.addOneMessage === 'function'
+        ? window.addOneMessage
+        : window.parent && typeof window.parent.addOneMessage === 'function'
+        ? window.parent.addOneMessage
+        : top && typeof top.addOneMessage === 'function'
+        ? top.addOneMessage
+        : null;
+
+    if (addOneMessage) {
+      // 限制内容长度，避免聊天界面过于拥挤
+      const maxLength = 2000;
+      const truncatedContent =
+        content.length > maxLength ? content.substring(0, maxLength) + '\n\n...(内容已截断)' : content;
+
+      const messageContent = `📄 **文档内容** (${fileName})\n\n${truncatedContent}`;
+
+      await addOneMessage({
+        name: 'User',
+        is_user: true,
+        is_system: false,
+        send_date: new Date().toISOString(),
+        mes: messageContent,
+        extra: {
+          type: 'document_upload',
+          file_name: fileName,
+          processed_by: 'smart_media_assistant',
+        },
+      });
+
+      console.log('[Chat Integration] 文档内容已发送到聊天');
+    }
+  } catch (error) {
+    console.error('[Chat Integration] 发送文档内容失败:', error);
   }
 }
 
@@ -735,7 +856,7 @@ window.__processDocumentByPlugin = async function (documentFile, options = {}) {
     if (pluginConfig.enableAIReading && options.enableAIReading !== false) {
       try {
         // 构建AI阅读提示
-        const aiPrompt = options.aiPrompt || `请阅读并总结以下文档内容：\n\n${result.content}`;
+        const aiPrompt = options.aiPrompt || `请阅读并总结以下文档内容，提供详细的分析和见解：`;
 
         // 调用SillyTavern的AI生成功能
         const aiResult = await callSillyTavernAI(aiPrompt, {
@@ -747,10 +868,22 @@ window.__processDocumentByPlugin = async function (documentFile, options = {}) {
         if (aiResult) {
           result.aiAnalysis = aiResult;
           console.log('[Document Processor] AI阅读完成');
+
+          // 如果启用自动发送到聊天，将AI分析结果发送到聊天中
+          if (options.sendToChat !== false) {
+            await sendAnalysisToChat(aiResult, documentFile.name, context);
+          }
         }
       } catch (aiError) {
         console.warn('[Document Processor] AI阅读失败:', aiError);
+        // 即使AI分析失败，也可以将原始内容发送到聊天
+        if (options.sendToChat !== false && options.sendRawContent) {
+          await sendDocumentToChat(result.content, documentFile.name, context);
+        }
       }
+    } else if (options.sendToChat !== false && options.sendRawContent) {
+      // 如果没有启用AI阅读但要求发送原始内容到聊天
+      await sendDocumentToChat(result.content, documentFile.name, context);
     }
 
     // 显示成功信息
