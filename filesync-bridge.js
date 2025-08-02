@@ -1129,7 +1129,7 @@ function createSettingsHtml() {
         <details class="extension-collapsible" open>
             <summary class="extension-header">
                 <span class="extension-icon">🖼️</span>
-                <span class="extension-title">ctrl的插件（bug大杂烩</span>
+                <span class="extension-title">ctrl的插件（bug大杂烩）</span>
                 <span class="extension-version">v${PLUGIN_VERSION}</span>
                 <span class="collapse-indicator">▼</span>
             </summary>
