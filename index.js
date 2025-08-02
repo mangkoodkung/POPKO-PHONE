@@ -529,8 +529,14 @@ function initPlugin() {
   // 添加样式
   addPluginStyles();
 
+  // 创建设置界面
+  createSettingsInterface();
+
   // 绑定事件监听器
   bindEventListeners();
+
+  // 绑定收缩栏功能
+  bindCollapsibleEvents();
 
   console.log('[Smart Media Assistant] 插件初始化完成');
 
@@ -541,46 +547,227 @@ function initPlugin() {
 }
 
 /**
+ * 创建设置界面
+ */
+function createSettingsInterface() {
+  // 检查是否已存在设置界面
+  if ($('#smart-media-assistant-settings').length > 0) {
+    return;
+  }
+
+  // 创建设置HTML
+  const settingsHTML = createSettingsHTML();
+
+  // 添加到扩展设置页面
+  const extensionsSettings = $('#extensions_settings');
+  if (extensionsSettings.length > 0) {
+    extensionsSettings.append(`<div id="smart-media-assistant-settings">${settingsHTML}</div>`);
+
+    if (pluginConfig.enableLogging) {
+      console.log('[Smart Media Assistant] 设置界面已创建');
+    }
+  } else {
+    console.warn('[Smart Media Assistant] 无法找到扩展设置容器');
+  }
+}
+
+/**
  * 添加插件样式
  */
 function addPluginStyles() {
-  const styleId = 'smart-media-assistant-styles';
+  // CSS文件已经通过manifest.json加载，这里只添加动态样式
+  const styleId = 'smart-media-assistant-dynamic-styles';
   if (document.getElementById(styleId)) return;
 
   const style = document.createElement('style');
   style.id = styleId;
   style.textContent = `
-    /* 智能媒体助手样式 */
-    .smart-media-processing {
-      position: relative;
-      opacity: 0.7;
+    /* 动态样式补充 */
+    .smart-media-assistant .setting-group {
+      margin-bottom: 20px;
     }
 
-    .smart-media-processing::after {
-      content: '处理中...';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 5px 10px;
-      border-radius: 4px;
+    .smart-media-assistant .setting-group h4 {
+      margin: 0 0 10px 0;
+      color: #333;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .smart-media-assistant label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+
+    .smart-media-assistant input[type="checkbox"] {
+      margin: 0;
+    }
+
+    .smart-media-assistant input[type="range"] {
+      width: 100%;
+      margin: 5px 0;
+    }
+
+    .smart-media-assistant .setting-description {
       font-size: 12px;
-    }
-
-    .smart-media-success {
-      border: 2px solid #4CAF50;
-      border-radius: 4px;
-    }
-
-    .smart-media-error {
-      border: 2px solid #f44336;
-      border-radius: 4px;
+      color: #666;
+      margin-top: 5px;
+      line-height: 1.4;
     }
   `;
 
   document.head.appendChild(style);
+}
+
+/**
+ * 创建设置界面HTML
+ */
+function createSettingsHTML() {
+  return `
+    <div class="smart-media-assistant">
+      <details class="smart-media-collapsible" open>
+        <summary class="smart-media-header">
+          <span class="smart-media-icon">🎯</span>
+          <span class="smart-media-title">智能媒体助手</span>
+          <span class="smart-media-version">v2.0.0</span>
+          <span class="smart-media-collapse-indicator">▼</span>
+        </summary>
+        <div class="smart-media-content">
+          <div class="setting-group">
+            <h4>🔧 基础设置</h4>
+            <label>
+              <input type="checkbox" id="${MODULE_NAME}_enableImageProcessing" ${
+    pluginConfig.enableImageProcessing ? 'checked' : ''
+  }>
+              启用图片处理
+            </label>
+            <div class="setting-description">开启图片压缩、优化和AI识图功能</div>
+
+            <label>
+              <input type="checkbox" id="${MODULE_NAME}_enableDocumentProcessing" ${
+    pluginConfig.enableDocumentProcessing ? 'checked' : ''
+  }>
+              启用文档处理
+            </label>
+            <div class="setting-description">开启txt、json等文档文件的处理功能</div>
+          </div>
+
+          <div class="setting-group">
+            <h4>🖼️ 图片设置</h4>
+            <label>
+              图片质量: <span id="${MODULE_NAME}_imageQualityValue">${pluginConfig.imageQuality}</span>%
+              <input type="range" id="${MODULE_NAME}_imageQuality" min="10" max="100" step="5" value="${
+    pluginConfig.imageQuality
+  }">
+            </label>
+            <div class="setting-description">图片压缩质量，数值越高质量越好但文件越大</div>
+
+            <label>
+              图片最大尺寸: <span id="${MODULE_NAME}_maxImageDimensionValue">${pluginConfig.maxImageDimension}</span>px
+              <input type="range" id="${MODULE_NAME}_maxImageDimension" min="512" max="4096" step="128" value="${
+    pluginConfig.maxImageDimension
+  }">
+            </label>
+            <div class="setting-description">图片的最大宽度或高度（像素）</div>
+          </div>
+
+          <div class="setting-group">
+            <h4>📄 文档设置</h4>
+            <label>
+              <input type="checkbox" id="${MODULE_NAME}_enableAIReading" ${
+    pluginConfig.enableAIReading ? 'checked' : ''
+  }>
+              启用AI文档阅读
+            </label>
+            <div class="setting-description">自动使用AI分析上传的文档内容</div>
+
+            <label>
+              文件大小限制: <span id="${MODULE_NAME}_maxFileSizeValue">${pluginConfig.maxFileSize}</span>MB
+              <input type="range" id="${MODULE_NAME}_maxFileSize" min="1" max="100" step="1" value="${
+    pluginConfig.maxFileSize
+  }">
+            </label>
+            <div class="setting-description">允许处理的最大文件大小</div>
+          </div>
+
+          <div class="setting-group">
+            <h4>⚙️ 高级设置</h4>
+            <label>
+              <input type="checkbox" id="${MODULE_NAME}_showProcessingInfo" ${
+    pluginConfig.showProcessingInfo ? 'checked' : ''
+  }>
+              显示处理信息
+            </label>
+            <div class="setting-description">显示文件处理的详细信息和进度</div>
+
+            <label>
+              <input type="checkbox" id="${MODULE_NAME}_enableLogging" ${pluginConfig.enableLogging ? 'checked' : ''}>
+              启用调试日志
+            </label>
+            <div class="setting-description">在控制台输出详细的调试信息</div>
+          </div>
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+/**
+ * 绑定收缩栏事件
+ */
+function bindCollapsibleEvents() {
+  const STORAGE_KEY = 'smart-media-assistant-collapsed';
+
+  // 保存收缩状态
+  const saveCollapsedState = isOpen => {
+    localStorage.setItem(STORAGE_KEY, !isOpen);
+  };
+
+  // 加载收缩状态
+  const loadCollapsedState = () => {
+    const collapsed = localStorage.getItem(STORAGE_KEY);
+    return collapsed === 'true';
+  };
+
+  // 应用保存的收缩状态
+  const details = $('.smart-media-collapsible')[0];
+  if (details && loadCollapsedState()) {
+    details.removeAttribute('open');
+  }
+
+  // 监听收缩状态变化
+  $('.smart-media-collapsible').on('toggle', function () {
+    const isOpen = this.hasAttribute('open');
+    saveCollapsedState(isOpen);
+
+    // 添加动画效果
+    const indicator = $(this).find('.smart-media-collapse-indicator');
+    if (isOpen) {
+      indicator.css('transform', 'rotate(180deg)');
+    } else {
+      indicator.css('transform', 'rotate(0deg)');
+    }
+
+    if (pluginConfig.enableLogging) {
+      console.log(`[Smart Media Assistant] 设置面板${isOpen ? '展开' : '收缩'}`);
+    }
+  });
+
+  // 添加点击动画效果
+  $('.smart-media-header')
+    .on('mousedown', function () {
+      $(this).css('transform', 'translateY(0px)');
+    })
+    .on('mouseup mouseleave', function () {
+      $(this).css('transform', 'translateY(-1px)');
+    });
+
+  if (pluginConfig.enableLogging) {
+    console.log('[Smart Media Assistant] 收缩栏功能已启用');
+  }
 }
 
 /**
@@ -599,17 +786,23 @@ function bindEventListeners() {
   });
 
   $(document).on('input', `#${MODULE_NAME}_imageQuality`, function () {
-    pluginConfig.imageQuality = parseInt($(this).val());
+    const value = parseInt($(this).val());
+    pluginConfig.imageQuality = value;
+    $(`#${MODULE_NAME}_imageQualityValue`).text(value);
     saveSettings();
   });
 
   $(document).on('input', `#${MODULE_NAME}_maxImageDimension`, function () {
-    pluginConfig.maxImageDimension = parseInt($(this).val());
+    const value = parseInt($(this).val());
+    pluginConfig.maxImageDimension = value;
+    $(`#${MODULE_NAME}_maxImageDimensionValue`).text(value);
     saveSettings();
   });
 
   $(document).on('input', `#${MODULE_NAME}_maxFileSize`, function () {
-    pluginConfig.maxFileSize = parseInt($(this).val());
+    const value = parseInt($(this).val());
+    pluginConfig.maxFileSize = value;
+    $(`#${MODULE_NAME}_maxFileSizeValue`).text(value);
     saveSettings();
   });
 
