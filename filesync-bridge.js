@@ -843,6 +843,12 @@ window.__processDocumentByPlugin = async function (file, options = {}) {
       size: file.size,
     });
 
+    // 强制检查：确保这不是图片文件
+    if (file.type.startsWith('image/')) {
+      console.error('[Document Processor] 错误：图片文件被发送到文档处理器！');
+      throw new Error('图片文件不应该使用文档处理器');
+    }
+
     // 显示处理开始提示
     if (typeof toastr !== 'undefined') {
       toastr.info('正在处理文档...', '文档上传');
@@ -1026,6 +1032,9 @@ window.__processFileByPlugin = async function (file, options = {}) {
       size: file.size,
     });
     console.log('[File Processor] 支持的文档格式:', pluginConfig.documentFormats);
+
+    // 添加调用栈信息，帮助调试
+    console.log('[File Processor] 调用栈:', new Error().stack);
 
     // 首先根据文件扩展名进行预判断，避免MIME类型错误
     const fileName = file.name.toLowerCase();
@@ -1461,85 +1470,23 @@ function createSettingsHtml() {
     <div class="third-party-image-processor-settings">
         <details class="extension-collapsible" open>
             <summary class="extension-header">
-                <span class="extension-icon">🖼️</span>
+                <span class="extension-icon">🎯</span>
                 <span class="extension-title">智能媒体助手</span>
-                <span class="extension-version">v${PLUGIN_VERSION}</span>
                 <span class="collapse-indicator">▼</span>
             </summary>
             <div class="extension-content">
                 <div class="setting-group">
-                    <h4>📋 运行模式</h4>
                     <label>
-                        <input type="checkbox" id="simpleMode" ${simpleModeChecked}> 启用简单上传模式
-                    </label>
-                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                        <strong>默认模式</strong>：使用原有的Visual Bridge智能处理（推荐）<br>
-                        <strong>简单模式</strong>：基础上传功能，无额外处理<br>
-                        注意：默认情况下使用原有的上传方式，无需更改设置
-                    </div>
-                </div>
-
-                <div class="setting-group" id="advancedSettings">
-                    <h4>🔧 处理模式</h4>
-                    <label>
-                        处理方式:
-                        <select id="processingMode">
-                            <option value="smart" ${smartModeSelected}>智能模式（默认原有方式）</option>
-                            <option value="direct" ${directModeSelected}>直接保存（无处理）</option>
-                            <option value="compress" ${compressModeSelected}>高级压缩处理</option>
-                        </select>
-                    </label>
-                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                        智能模式：使用原有的Visual Bridge处理方式（推荐）<br>
-                        直接保存：保持原始图像不变<br>
-                        高级压缩：使用新的压缩算法优化图像
-                    </div>
-                </div>
-
-                <div class="setting-group" id="compressionSettings">
-                    <h4>⚙️ 压缩设置</h4>
-                    <label>
-                        最大宽度: <input type="number" id="maxWidth" min="100" max="4096" value="${pluginConfig.maxWidth}">
-                    </label>
-                    <label>
-                        最大高度: <input type="number" id="maxHeight" min="100" max="4096" value="${pluginConfig.maxHeight}">
-                    </label>
-                    <label>
-                        图像质量: <input type="range" id="quality" min="0.1" max="1" step="0.05" value="${pluginConfig.quality}">
-                        <span id="qualityValue">${qualityPercent}%</span>
-                    </label>
-                    <label>
-                        压缩模式:
-                        <select id="compressionMode">
-                            <option value="adaptive" ${adaptiveModeSelected}>自适应</option>
-                            <option value="quality" ${qualityModeSelected}>保持质量</option>
-                            <option value="size" ${sizeModeSelected}>压缩优先</option>
-                        </select>
+                        <input type="checkbox" id="simpleMode" ${simpleModeChecked}> 简单模式
                     </label>
                 </div>
 
-                <div class="setting-group" id="fileSettings">
-                    <h4>📁 文件限制</h4>
-                    <label>
-                        最大文件大小 (MB): <input type="number" id="maxFileSize" min="1" max="100" value="${maxFileSizeMB}">
-                    </label>
-                </div>
-
-                <div class="setting-group" id="advancedOptions">
-                    <h4>🔬 高级选项</h4>
-                    <label>
-                        <input type="checkbox" id="enableWebP" ${enableWebPChecked}> 启用WebP格式
-                    </label>
-                    <label>
-                        <input type="checkbox" id="autoOptimize" ${autoOptimizeChecked}> 自动优化
-                    </label>
+                <div class="setting-group">
                     <label>
                         <input type="checkbox" id="showProcessingInfo" ${showProcessingInfoChecked}> 显示处理信息
                     </label>
-                    <label>
-                        <input type="checkbox" id="enableLogging" ${enableLoggingChecked}> 启用调试日志
-                    </label>
                 </div>
+
             </div>
         </details>
     </div>`;
