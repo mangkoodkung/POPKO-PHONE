@@ -973,7 +973,7 @@ function addCollapsibleStyles() {
   const style = document.createElement('style');
   style.id = styleId;
   style.textContent = `
-    /* 智能媒体处理助手 - 折叠样式 */
+    /* ctrl的插件（bug大杂烩) */
     .third-party-image-processor-settings {
       margin-bottom: 20px;
     }
@@ -1129,7 +1129,7 @@ function createSettingsHtml() {
         <details class="extension-collapsible" open>
             <summary class="extension-header">
                 <span class="extension-icon">🖼️</span>
-                <span class="extension-title">智能媒体处理助手</span>
+                <span class="extension-title">ctrl的插件（bug大杂烩</span>
                 <span class="extension-version">v${PLUGIN_VERSION}</span>
                 <span class="collapse-indicator">▼</span>
             </summary>
