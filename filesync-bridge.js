@@ -837,6 +837,12 @@ window.__processDocumentByPlugin = async function (file, options = {}) {
       throw new Error('请选择文档文件！');
     }
 
+    console.log('[Document Processor] 开始处理文档:', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+
     // 显示处理开始提示
     if (typeof toastr !== 'undefined') {
       toastr.info('正在处理文档...', '文档上传');
@@ -851,6 +857,10 @@ window.__processDocumentByPlugin = async function (file, options = {}) {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/html',
       'text/xml',
+      'application/xml',
+      'text/csv',
+      'application/rtf',
+      'application/pdf',
     ];
 
     if (!supportedTypes.includes(file.type)) {
@@ -862,6 +872,8 @@ window.__processDocumentByPlugin = async function (file, options = {}) {
     if (file.size > maxSize) {
       throw new Error(`文件过大，限制: ${Math.round(maxSize / 1024 / 1024)}MB`);
     }
+
+    console.log('[Document Processor] 文档验证通过，开始读取内容');
 
     // 读取文档内容
     const content = await new Promise((resolve, reject) => {
@@ -1099,12 +1111,10 @@ window.__processFileByPlugin = async function (file, options = {}) {
       }
     }
 
-    // 处理文件
-    if (isImage) {
-      console.log('[File Processor] 识别为图片文件');
-      return await window.__uploadImageByPlugin(file, options);
-    } else if (isDocument) {
+    // 处理文件 - 严格区分图片和文档，避免调用错误的接口
+    if (isDocument) {
       console.log('[File Processor] 识别为文档文件，MIME类型:', correctedMimeType);
+      console.log('[File Processor] 强制使用文档处理接口，避免调用图片处理服务器');
 
       // 如果需要修正MIME类型，创建新的文件对象
       let processFile = file;
@@ -1114,6 +1124,9 @@ window.__processFileByPlugin = async function (file, options = {}) {
       }
 
       return await window.__processDocumentByPlugin(processFile, options);
+    } else if (isImage) {
+      console.log('[File Processor] 识别为图片文件');
+      return await window.__uploadImageByPlugin(file, options);
     } else {
       throw new Error(`不支持的文件类型: ${file.type || '未知'} (文件名: ${file.name})`);
     }
