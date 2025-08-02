@@ -2,7 +2,7 @@
  * 智能媒体助手 - SillyTavern Extension
  * 统一的图片和文档处理插件
  * 作者: kencuo
- * 版本: 2.0.0
+ * 版本: 1.0.0
  */
 
 import { saveSettingsDebounced } from '../../../../script.js';
