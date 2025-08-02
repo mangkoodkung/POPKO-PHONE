@@ -8,7 +8,7 @@
 // 导入SillyTavern核心模块
 import { saveSettingsDebounced } from '../../../../script.js';
 import { getContext } from '../../../extensions.js';
-import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
+import { getBase64Async, getStringHash, saveBase64AsFile } from '../../../utils.js';
 
 // 插件元数据
 const PLUGIN_ID = 'visual-bridge-kencuo';
@@ -832,152 +832,171 @@ async function sendDocumentToChat(content, fileName, context) {
  * 外部接口 - 文档处理入口
  */
 window.__processDocumentByPlugin = async function (file, options = {}) {
-  if (!file || typeof file !== 'object') {
-    throw new Error('请选择文档文件！');
-  }
+  try {
+    if (!file || typeof file !== 'object') {
+      throw new Error('请选择文档文件！');
+    }
 
-  // 验证文件类型
-  const supportedTypes = pluginConfig.documentFormats || [
-    'text/plain',
-    'application/json',
-    'text/markdown',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/html',
-    'text/xml',
-  ];
+    // 显示处理开始提示
+    if (typeof toastr !== 'undefined') {
+      toastr.info('正在处理文档...', '文档上传');
+    }
 
-  if (!supportedTypes.includes(file.type)) {
-    throw new Error(`不支持的文档格式: ${file.type}`);
-  }
+    // 验证文件类型
+    const supportedTypes = pluginConfig.documentFormats || [
+      'text/plain',
+      'application/json',
+      'text/markdown',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/html',
+      'text/xml',
+    ];
 
-  // 验证文件大小
-  const maxSize = pluginConfig.documentMaxSize || 50 * 1024 * 1024;
-  if (file.size > maxSize) {
-    throw new Error(`文件过大，限制: ${Math.round(maxSize / 1024 / 1024)}MB`);
-  }
+    if (!supportedTypes.includes(file.type)) {
+      throw new Error(`不支持的文档格式: ${file.type}`);
+    }
 
-  // 读取文档内容
-  const content = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
+    // 验证文件大小
+    const maxSize = pluginConfig.documentMaxSize || 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new Error(`文件过大，限制: ${Math.round(maxSize / 1024 / 1024)}MB`);
+    }
 
-    reader.onload = function (e) {
-      try {
-        let content = e.target.result;
+    // 读取文档内容
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
 
-        // 根据文件类型处理内容
-        switch (file.type) {
-          case 'text/plain':
-          case 'text/markdown':
-          case 'text/html':
-          case 'text/xml':
-            resolve(content);
-            break;
+      reader.onload = function (e) {
+        try {
+          let content = e.target.result;
 
-          case 'application/json':
-            // 格式化JSON
-            try {
-              const jsonObj = JSON.parse(content);
-              resolve(JSON.stringify(jsonObj, null, 2));
-            } catch {
+          // 根据文件类型处理内容
+          switch (file.type) {
+            case 'text/plain':
+            case 'text/markdown':
+            case 'text/html':
+            case 'text/xml':
               resolve(content);
-            }
-            break;
+              break;
 
-          default:
-            resolve(content);
+            case 'application/json':
+              // 格式化JSON
+              try {
+                const jsonObj = JSON.parse(content);
+                resolve(JSON.stringify(jsonObj, null, 2));
+              } catch {
+                resolve(content);
+              }
+              break;
+
+            default:
+              resolve(content);
+          }
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsText(file, 'UTF-8');
+    });
+
+    // 获取上下文信息 - 使用与图片处理相同的方式
+    const ctx = getContext();
+    const currentCharacterId = ctx.characterId;
+    const characters = ctx.characters;
+    const character = characters[currentCharacterId];
+    const characterName = character ? character.name : 'unknown';
+
+    // 生成文件名 - 使用与图片处理相同的方式
+    const fileNamePrefix = `${Date.now()}_${getStringHash(file.name)}`;
+    const extension = file.name.split('.').pop() || 'txt';
+
+    // 保存文档到本地（类似图片处理）
+    let documentUrl = null;
+    if (options.saveToLocal !== false) {
+      const base64Content = btoa(unescape(encodeURIComponent(content)));
+      documentUrl = await saveBase64AsFile(base64Content, `${characterName}/documents`, fileNamePrefix, extension);
+    }
+
+    // 如果启用AI分析并且需要发送到聊天
+    if (pluginConfig.enableAIReading && options.enableAIReading !== false && options.sendToChat !== false) {
+      try {
+        // 构建AI提示
+        const aiPrompt = options.aiPrompt || `请分析这个文档的内容：${file.name}`;
+
+        // 调用SillyTavern的generate函数
+        const generateFn =
+          typeof window.generate === 'function'
+            ? window.generate
+            : window.parent && typeof window.parent.generate === 'function'
+            ? window.parent.generate
+            : top && typeof top.generate === 'function'
+            ? top.generate
+            : null;
+
+        if (generateFn) {
+          // 构建消息内容
+          const message = `${aiPrompt}\n\n文档内容：\n${content}`;
+
+          // 发送到聊天让AI分析
+          await generateFn(message);
+
+          console.log('[Document Processor] 文档已发送到聊天进行AI分析');
+        } else {
+          console.warn('[Document Processor] 无法找到generate函数');
+        }
+      } catch (aiError) {
+        console.warn('[Document Processor] AI分析失败:', aiError);
+      }
+    } else if (options.sendToChat !== false && options.sendRawContent) {
+      // 如果只需要发送原始内容
+      try {
+        const generateFn =
+          typeof window.generate === 'function'
+            ? window.generate
+            : window.parent && typeof window.parent.generate === 'function'
+            ? window.parent.generate
+            : top && typeof top.generate === 'function'
+            ? top.generate
+            : null;
+
+        if (generateFn) {
+          const message = `我上传了一个文档：${file.name}\n\n内容：\n${content}`;
+          await generateFn(message);
         }
       } catch (error) {
-        reject(error);
+        console.warn('[Document Processor] 发送原始内容失败:', error);
       }
+    }
+
+    // 显示成功提示
+    if (typeof toastr !== 'undefined') {
+      toastr.success(`文档 "${file.name}" 处理完成`, '文档上传');
+    }
+
+    return {
+      success: true,
+      url: documentUrl,
+      content: content,
+      metadata: {
+        originalName: file.name,
+        type: file.type,
+        size: file.size,
+        contentLength: content.length,
+        character: characterName,
+        timestamp: new Date().toISOString(),
+      },
     };
-
-    reader.onerror = () => reject(new Error('文件读取失败'));
-    reader.readAsText(file, 'UTF-8');
-  });
-
-  // 获取上下文信息 - 使用与图片处理相同的方式
-  const ctx = getContext();
-  const currentCharacterId = ctx.characterId;
-  const characters = ctx.characters;
-  const character = characters[currentCharacterId];
-  const characterName = character ? character.name : 'unknown';
-
-  // 生成文件名 - 使用与图片处理相同的方式
-  const fileNamePrefix = `${Date.now()}_${getStringHash(file.name)}`;
-  const extension = file.name.split('.').pop() || 'txt';
-
-  // 保存文档到本地（类似图片处理）
-  let documentUrl = null;
-  if (options.saveToLocal !== false) {
-    const base64Content = btoa(unescape(encodeURIComponent(content)));
-    documentUrl = await saveBase64AsFile(base64Content, `${characterName}/documents`, fileNamePrefix, extension);
-  }
-
-  // 如果启用AI分析并且需要发送到聊天
-  if (pluginConfig.enableAIReading && options.enableAIReading !== false && options.sendToChat !== false) {
-    try {
-      // 构建AI提示
-      const aiPrompt = options.aiPrompt || `请分析这个文档的内容：${file.name}`;
-
-      // 调用SillyTavern的generate函数
-      const generateFn =
-        typeof generate === 'function'
-          ? generate
-          : window.parent && typeof window.parent.generate === 'function'
-          ? window.parent.generate
-          : top && typeof top.generate === 'function'
-          ? top.generate
-          : null;
-
-      if (generateFn) {
-        // 构建消息内容
-        const message = `${aiPrompt}\n\n文档内容：\n${content}`;
-
-        // 发送到聊天让AI分析
-        await generateFn(message);
-
-        console.log('[Document Processor] 文档已发送到聊天进行AI分析');
-      } else {
-        console.warn('[Document Processor] 无法找到generate函数');
-      }
-    } catch (aiError) {
-      console.warn('[Document Processor] AI分析失败:', aiError);
+  } catch (error) {
+    console.error('文档处理失败:', error);
+    // 显示错误提示
+    if (typeof toastr !== 'undefined') {
+      toastr.error(`文档处理失败: ${error.message}`, '文档上传');
     }
-  } else if (options.sendToChat !== false && options.sendRawContent) {
-    // 如果只需要发送原始内容
-    try {
-      const generateFn =
-        typeof generate === 'function'
-          ? generate
-          : window.parent && typeof window.parent.generate === 'function'
-          ? window.parent.generate
-          : top && typeof top.generate === 'function'
-          ? top.generate
-          : null;
-
-      if (generateFn) {
-        const message = `我上传了一个文档：${file.name}\n\n内容：\n${content}`;
-        await generateFn(message);
-      }
-    } catch (error) {
-      console.warn('[Document Processor] 发送原始内容失败:', error);
-    }
+    throw error;
   }
-
-  return {
-    success: true,
-    url: documentUrl,
-    content: content,
-    metadata: {
-      originalName: file.name,
-      type: file.type,
-      size: file.size,
-      contentLength: content.length,
-      character: characterName,
-      timestamp: new Date().toISOString(),
-    },
-  };
 };
 
 /**
