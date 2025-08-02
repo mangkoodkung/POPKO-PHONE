@@ -644,7 +644,7 @@ function createSettingsHTML() {
         <summary class="smart-media-header">
           <span class="smart-media-icon">🎯</span>
           <span class="smart-media-title">智能媒体助手</span>
-          <span class="smart-media-version">v2.0.0</span>
+          <span class="smart-media-version">v1.0.0</span>
           <span class="smart-media-collapse-indicator">▼</span>
         </summary>
         <div class="smart-media-content">
