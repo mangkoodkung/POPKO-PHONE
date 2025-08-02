@@ -1015,47 +1015,116 @@ window.__processFileByPlugin = async function (file, options = {}) {
     });
     console.log('[File Processor] 支持的文档格式:', pluginConfig.documentFormats);
 
-    // 自动识别文件类型
-    if (file.type.startsWith('image/')) {
+    // 首先根据文件扩展名进行预判断，避免MIME类型错误
+    const fileName = file.name.toLowerCase();
+    const documentExtensions = [
+      '.txt',
+      '.json',
+      '.md',
+      '.markdown',
+      '.csv',
+      '.html',
+      '.htm',
+      '.xml',
+      '.rtf',
+      '.doc',
+      '.docx',
+      '.pdf',
+    ];
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+
+    let isDocument = false;
+    let isImage = false;
+    let correctedMimeType = file.type;
+
+    // 根据扩展名判断文件类型
+    for (const ext of documentExtensions) {
+      if (fileName.endsWith(ext)) {
+        isDocument = true;
+        // 修正MIME类型
+        switch (ext) {
+          case '.txt':
+            correctedMimeType = 'text/plain';
+            break;
+          case '.json':
+            correctedMimeType = 'application/json';
+            break;
+          case '.md':
+          case '.markdown':
+            correctedMimeType = 'text/markdown';
+            break;
+          case '.csv':
+            correctedMimeType = 'text/csv';
+            break;
+          case '.html':
+          case '.htm':
+            correctedMimeType = 'text/html';
+            break;
+          case '.xml':
+            correctedMimeType = 'text/xml';
+            break;
+          case '.rtf':
+            correctedMimeType = 'application/rtf';
+            break;
+          case '.doc':
+            correctedMimeType = 'application/msword';
+            break;
+          case '.docx':
+            correctedMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            break;
+          case '.pdf':
+            correctedMimeType = 'application/pdf';
+            break;
+        }
+        break;
+      }
+    }
+
+    if (!isDocument) {
+      for (const ext of imageExtensions) {
+        if (fileName.endsWith(ext)) {
+          isImage = true;
+          break;
+        }
+      }
+    }
+
+    // 如果扩展名判断不出来，再使用MIME类型
+    if (!isDocument && !isImage) {
+      if (file.type.startsWith('image/')) {
+        isImage = true;
+      } else if (pluginConfig.documentFormats && pluginConfig.documentFormats.includes(file.type)) {
+        isDocument = true;
+        correctedMimeType = file.type;
+      }
+    }
+
+    // 处理文件
+    if (isImage) {
       console.log('[File Processor] 识别为图片文件');
       return await window.__uploadImageByPlugin(file, options);
-    } else if (pluginConfig.documentFormats && pluginConfig.documentFormats.includes(file.type)) {
-      console.log('[File Processor] 识别为文档文件');
-      return await window.__processDocumentByPlugin(file, options);
-    } else {
-      // 如果没有MIME类型，尝试根据文件扩展名判断
-      const fileName = file.name.toLowerCase();
-      if (fileName.endsWith('.txt')) {
-        console.log('[File Processor] 根据扩展名识别为文本文件');
-        // 创建一个带有正确MIME类型的新文件对象
-        const correctedFile = new File([file], file.name, { type: 'text/plain' });
-        return await window.__processDocumentByPlugin(correctedFile, options);
-      } else if (fileName.endsWith('.json')) {
-        console.log('[File Processor] 根据扩展名识别为JSON文件');
-        const correctedFile = new File([file], file.name, { type: 'application/json' });
-        return await window.__processDocumentByPlugin(correctedFile, options);
-      } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
-        console.log('[File Processor] 根据扩展名识别为Markdown文件');
-        const correctedFile = new File([file], file.name, { type: 'text/markdown' });
-        return await window.__processDocumentByPlugin(correctedFile, options);
-      } else if (fileName.endsWith('.csv')) {
-        console.log('[File Processor] 根据扩展名识别为CSV文件');
-        const correctedFile = new File([file], file.name, { type: 'text/csv' });
-        return await window.__processDocumentByPlugin(correctedFile, options);
-      } else if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
-        console.log('[File Processor] 根据扩展名识别为HTML文件');
-        const correctedFile = new File([file], file.name, { type: 'text/html' });
-        return await window.__processDocumentByPlugin(correctedFile, options);
-      } else if (fileName.endsWith('.xml')) {
-        console.log('[File Processor] 根据扩展名识别为XML文件');
-        const correctedFile = new File([file], file.name, { type: 'text/xml' });
-        return await window.__processDocumentByPlugin(correctedFile, options);
-      } else {
-        throw new Error(`不支持的文件类型: ${file.type || '未知'} (文件名: ${file.name})`);
+    } else if (isDocument) {
+      console.log('[File Processor] 识别为文档文件，MIME类型:', correctedMimeType);
+
+      // 如果需要修正MIME类型，创建新的文件对象
+      let processFile = file;
+      if (correctedMimeType !== file.type) {
+        console.log('[File Processor] 修正MIME类型从', file.type, '到', correctedMimeType);
+        processFile = new File([file], file.name, { type: correctedMimeType });
       }
+
+      return await window.__processDocumentByPlugin(processFile, options);
+    } else {
+      throw new Error(`不支持的文件类型: ${file.type || '未知'} (文件名: ${file.name})`);
     }
   } catch (error) {
     console.error('[File Processor] 处理失败:', error.message);
+
+    // 显示用户友好的错误信息
+    if (typeof toastr !== 'undefined') {
+      toastr.error(`文件处理失败: ${error.message}`, '文件上传');
+    }
+
     throw error;
   }
 };
@@ -1222,23 +1291,23 @@ function addCollapsibleStyles() {
   const style = document.createElement('style');
   style.id = styleId;
   style.textContent = `
-    /* ctrl的插件（bug大杂烩) */
+    /* 智能媒体助手 - SillyTavern 标准扩展样式 */
     .third-party-image-processor-settings {
       margin-bottom: 20px;
     }
 
     .extension-collapsible {
-      border: 1px solid #ccc;
+      border: 1px solid var(--SmartThemeBorderColor, #ccc);
       border-radius: 4px;
       margin-bottom: 15px;
       overflow: hidden;
-      background: #f9f9f9;
+      background: var(--SmartThemeBodyColor, #f9f9f9);
       box-shadow: none;
     }
 
     .extension-header {
-      background: #e9ecef;
-      color: #495057;
+      background: var(--SmartThemeBlurTintColor, #e9ecef);
+      color: var(--SmartThemeEmColor, #495057);
       padding: 8px 12px;
       cursor: pointer;
       display: flex;
@@ -1249,11 +1318,11 @@ function addCollapsibleStyles() {
       transition: background-color 0.2s ease;
       user-select: none;
       list-style: none;
-      border-bottom: 1px solid #dee2e6;
+      border-bottom: 1px solid var(--SmartThemeBorderColor, #dee2e6);
     }
 
     .extension-header:hover {
-      background: #dee2e6;
+      background: var(--SmartThemeQuoteColor, #dee2e6);
       transform: none;
       box-shadow: none;
     }
@@ -1269,11 +1338,12 @@ function addCollapsibleStyles() {
     .extension-title {
       flex: 1;
       font-weight: 600;
+      color: var(--SmartThemeEmColor, #495057);
     }
 
     .extension-version {
-      background: #6c757d;
-      color: white;
+      background: var(--SmartThemeQuoteColor, #6c757d);
+      color: var(--SmartThemeBodyColor, white);
       padding: 1px 6px;
       border-radius: 3px;
       font-size: 10px;
@@ -1283,7 +1353,7 @@ function addCollapsibleStyles() {
     .collapse-indicator {
       font-size: 10px;
       transition: transform 0.2s ease;
-      color: #6c757d;
+      color: var(--SmartThemeQuoteColor, #6c757d);
     }
 
     .extension-collapsible[open] .collapse-indicator {
@@ -1292,13 +1362,13 @@ function addCollapsibleStyles() {
 
     .extension-content {
       padding: 15px;
-      background: #fff;
+      background: var(--SmartThemeBodyColor, #fff);
       border-top: none;
     }
 
     .setting-group {
-      background: #f8f9fa;
-      border: 1px solid #dee2e6;
+      background: var(--SmartThemeBlurTintColor, #f8f9fa);
+      border: 1px solid var(--SmartThemeBorderColor, #dee2e6);
       border-radius: 3px;
       padding: 12px;
       margin-bottom: 10px;
@@ -1306,10 +1376,10 @@ function addCollapsibleStyles() {
 
     .setting-group h4 {
       margin: 0 0 8px 0;
-      color: #495057;
+      color: var(--SmartThemeEmColor, #495057);
       font-size: 13px;
       font-weight: 600;
-      border-bottom: 1px solid #dee2e6;
+      border-bottom: 1px solid var(--SmartThemeBorderColor, #dee2e6);
       padding-bottom: 5px;
     }
 
@@ -1317,7 +1387,7 @@ function addCollapsibleStyles() {
       display: block;
       margin-bottom: 6px;
       font-size: 12px;
-      color: #6c757d;
+      color: var(--SmartThemeQuoteColor, #6c757d);
     }
 
     .setting-group input[type="checkbox"] {
@@ -1329,10 +1399,11 @@ function addCollapsibleStyles() {
     .setting-group input[type="range"] {
       width: 100%;
       padding: 4px 8px;
-      border: 1px solid #ced4da;
+      border: 1px solid var(--SmartThemeBorderColor, #ced4da);
       border-radius: 3px;
       font-size: 12px;
-      background: white;
+      background: var(--SmartThemeBodyColor, white);
+      color: var(--SmartThemeEmColor, #495057);
     }
 
     /* 响应式设计 */
@@ -1378,7 +1449,7 @@ function createSettingsHtml() {
         <details class="extension-collapsible" open>
             <summary class="extension-header">
                 <span class="extension-icon">🖼️</span>
-                <span class="extension-title">ctrl的插件（bug大杂烩）</span>
+                <span class="extension-title">智能媒体助手</span>
                 <span class="extension-version">v${PLUGIN_VERSION}</span>
                 <span class="collapse-indicator">▼</span>
             </summary>
@@ -1586,49 +1657,79 @@ function bindCollapsibleEvents() {
 }
 
 /**
+ * SillyTavern 扩展标准接口
+ */
+function getManifest() {
+  return {
+    display_name: '智能媒体助手',
+    loading_order: 50,
+    requires: [],
+    optional: [],
+    js: 'third-party-image-processor.js',
+    css: '',
+    author: 'kencuo',
+    version: PLUGIN_VERSION,
+    homePage: 'https://github.com/kencuo/chajian',
+    description:
+      '智能视觉文件桥接器，提供高效的图像处理和文档分析解决方案。支持多种文件格式，自动AI分析，完美集成SillyTavern聊天体验。',
+  };
+}
+
+/**
+ * SillyTavern 扩展加载函数
+ */
+function loadExtensionSettings() {
+  // 加载设置
+  loadSettings();
+
+  // 添加折叠样式
+  addCollapsibleStyles();
+
+  // 创建设置界面
+  const settingsHtml = createSettingsHtml();
+  $('#extensions_settings').append(settingsHtml);
+
+  // 绑定事件
+  $('#vb-enabled').on('change', EventManager.onToggleActive);
+  $('#vb-optimization-mode').on('change', EventManager.onModeChange);
+  $('#vb-quality').on('input', EventManager.onQualityChange);
+
+  // 绑定新增的设置事件
+  bindSettingsEvents();
+
+  // 绑定折叠功能
+  bindCollapsibleEvents();
+
+  console.log(`[智能媒体助手] 设置界面已加载`);
+}
+
+/**
  * 插件启动
  */
 jQuery(async () => {
   try {
-    console.log(`[Visual Bridge] 启动中... v${PLUGIN_VERSION} by ${PLUGIN_AUTHOR}`);
-
-    // 加载设置
-    loadSettings();
-
-    // 添加折叠样式
-    addCollapsibleStyles();
-
-    // 创建设置界面
-    const settingsHtml = createSettingsHtml();
-    $('#extensions_settings').append(settingsHtml);
-
-    // 绑定事件
-    $('#vb-enabled').on('change', EventManager.onToggleActive);
-    $('#vb-optimization-mode').on('change', EventManager.onModeChange);
-    $('#vb-quality').on('input', EventManager.onQualityChange);
-
-    // 绑定新增的设置事件
-    bindSettingsEvents();
-
-    // 绑定折叠功能
-    bindCollapsibleEvents();
+    console.log(`[智能媒体助手] 启动中... v${PLUGIN_VERSION} by ${PLUGIN_AUTHOR}`);
 
     // 初始化
     await ConfigManager.loadConfig();
     await visualBridge.initialize();
 
     // 注册事件监听器
-    eventSource.on(event_types.SETTINGS_LOADED, loadSettings);
+    if (typeof eventSource !== 'undefined' && typeof event_types !== 'undefined') {
+      eventSource.on(event_types.SETTINGS_LOADED, loadSettings);
+    }
 
-    console.log('[Visual Bridge] 启动完成!');
-    console.log('[Visual Bridge] GitHub: https://github.com/kencuo/chajian');
+    console.log('[智能媒体助手] 启动完成!');
+    console.log('[智能媒体助手] GitHub: https://github.com/kencuo/chajian');
 
     // 显示初始化成功消息
     if (pluginConfig.showProcessingInfo) {
       const modeText = pluginConfig.simpleMode ? '简单上传模式' : '完整图像处理模式';
-      toastr.success(`智能图像处理插件已启用 (${modeText})`, '插件加载');
+      if (typeof toastr !== 'undefined') {
+        toastr.success(`智能媒体助手已启用 (${modeText})`, '插件加载');
+      }
     }
   } catch (error) {
-    console.error('[Visual Bridge] 启动失败:', error);
+    console.error('[智能媒体助手] 启动失败:', error);
   }
 });
