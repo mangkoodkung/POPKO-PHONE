@@ -14,7 +14,7 @@ import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 const PLUGIN_ID = 'visual-bridge-kencuo';
 const MODULE_NAME = 'third-party-image-processor';
 const UPDATE_INTERVAL = 1000;
-const PLUGIN_VERSION = '1.2.0';
+const PLUGIN_VERSION = '1.0.0';
 const PLUGIN_AUTHOR = 'kencuo';
 
 // 配置常量
@@ -647,6 +647,67 @@ window.__uploadImageByPlugin = async function (imageFile, processingOptions = {}
 };
 
 /**
+ * SillyTavern AI接口封装
+ */
+async function callSillyTavernAI(prompt, context = {}) {
+  try {
+    // 获取SillyTavern的AI生成函数
+    const AI_GENERATE =
+      typeof generate === 'function'
+        ? generate
+        : window.parent && window.parent.generate
+        ? window.parent.generate
+        : top && top.generate
+        ? top.generate
+        : null;
+
+    if (!AI_GENERATE) {
+      throw new Error('SillyTavern AI接口不可用');
+    }
+
+    // 构建请求数据
+    const requestData = {
+      injects: [
+        {
+          role: 'system',
+          content: prompt,
+          position: 'in_chat',
+          depth: 0,
+          should_scan: true,
+        },
+      ],
+      should_stream: false, // 文档分析不需要流式输出
+      user_input: context.fileName ? `正在分析文档: ${context.fileName}` : '正在分析文档',
+    };
+
+    // 如果有文档内容，添加到上下文中
+    if (context.documentContent) {
+      requestData.injects.push({
+        role: 'user',
+        content: `文档内容：\n${context.documentContent}`,
+        position: 'in_chat',
+        depth: 1,
+        should_scan: true,
+      });
+    }
+
+    console.log('[SillyTavern AI] 发送文档分析请求...');
+    const result = await AI_GENERATE(requestData);
+
+    if (result && typeof result === 'string') {
+      return result;
+    } else if (result && result.content) {
+      return result.content;
+    } else {
+      throw new Error('AI返回格式异常');
+    }
+  } catch (error) {
+    console.error('[SillyTavern AI] 调用失败:', error);
+    throw error;
+  }
+}
+
+/**
  * 外部接口 - 文档处理入口
  */
 window.__processDocumentByPlugin = async function (documentFile, options = {}) {
@@ -676,9 +737,17 @@ window.__processDocumentByPlugin = async function (documentFile, options = {}) {
         // 构建AI阅读提示
         const aiPrompt = options.aiPrompt || `请阅读并总结以下文档内容：\n\n${result.content}`;
 
-        // 这里可以调用SillyTavern的AI生成功能
-        // 注意：需要确保SillyTavern的AI接口可用
-        console.log('[Document Processor] AI阅读功能需要集成SillyTavern的AI接口');
+        // 调用SillyTavern的AI生成功能
+        const aiResult = await callSillyTavernAI(aiPrompt, {
+          documentContent: result.content,
+          fileName: documentFile.name,
+          fileType: result.type,
+        });
+
+        if (aiResult) {
+          result.aiAnalysis = aiResult;
+          console.log('[Document Processor] AI阅读完成');
+        }
       } catch (aiError) {
         console.warn('[Document Processor] AI阅读失败:', aiError);
       }
@@ -743,14 +812,61 @@ window.__processFileByPlugin = async function (file, options = {}) {
 };
 
 /**
+ * 外部接口 - 获取SillyTavern AI生成函数
+ */
+window.__getSillyTavernAI = function () {
+  const AI_GENERATE =
+    typeof generate === 'function'
+      ? generate
+      : window.parent && window.parent.generate
+      ? window.parent.generate
+      : top && top.generate
+      ? top.generate
+      : null;
+
+  return {
+    generate: AI_GENERATE,
+    available: !!AI_GENERATE,
+    callAI: callSillyTavernAI,
+  };
+};
+
+/**
+ * 外部接口 - 直接调用SillyTavern AI
+ */
+window.__callSillyTavernAI = callSillyTavernAI;
+
+/**
  * 外部接口 - 获取支持的文件类型
  */
 window.__getSupportedFileTypes = function () {
   return {
-    images: pluginConfig.formatSupport || [],
-    documents: pluginConfig.documentFormats || [],
-    all: [...(pluginConfig.formatSupport || []), ...(pluginConfig.documentFormats || [])],
+    images: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'],
+    documents: pluginConfig.documentFormats || [
+      'text/plain',
+      'text/markdown',
+      'text/csv',
+      'text/html',
+      'text/xml',
+      'application/xml',
+      'application/json',
+      'application/rtf',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ],
+    all: function () {
+      return [...this.images, ...this.documents];
+    },
   };
+};
+
+/**
+ * 外部接口 - 检查文件类型是否支持
+ */
+window.__isFileTypeSupported = function (fileType) {
+  const supportedTypes = window.__getSupportedFileTypes();
+  return supportedTypes.all().includes(fileType);
 };
 
 /**
@@ -863,33 +979,34 @@ function addCollapsibleStyles() {
     }
 
     .extension-collapsible {
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-bottom: 15px;
       overflow: hidden;
-      background: #fff;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      background: #f9f9f9;
+      box-shadow: none;
     }
 
     .extension-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 15px 20px;
+      background: #e9ecef;
+      color: #495057;
+      padding: 8px 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-weight: bold;
-      font-size: 16px;
-      transition: all 0.3s ease;
+      gap: 8px;
+      font-weight: normal;
+      font-size: 14px;
+      transition: background-color 0.2s ease;
       user-select: none;
       list-style: none;
+      border-bottom: 1px solid #dee2e6;
     }
 
     .extension-header:hover {
-      background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      background: #dee2e6;
+      transform: none;
+      box-shadow: none;
     }
 
     .extension-header::-webkit-details-marker {
@@ -897,24 +1014,27 @@ function addCollapsibleStyles() {
     }
 
     .extension-icon {
-      font-size: 20px;
+      font-size: 14px;
     }
 
     .extension-title {
       flex: 1;
+      font-weight: 600;
     }
 
     .extension-version {
-      background: rgba(255,255,255,0.2);
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 12px;
+      background: #6c757d;
+      color: white;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
       font-weight: normal;
     }
 
     .collapse-indicator {
-      font-size: 12px;
-      transition: transform 0.3s ease;
+      font-size: 10px;
+      transition: transform 0.2s ease;
+      color: #6c757d;
     }
 
     .extension-collapsible[open] .collapse-indicator {
@@ -922,47 +1042,48 @@ function addCollapsibleStyles() {
     }
 
     .extension-content {
-      padding: 20px;
-      background: #fafafa;
-      border-top: 1px solid #eee;
+      padding: 15px;
+      background: #fff;
+      border-top: none;
     }
 
     .setting-group {
-      background: white;
-      border: 1px solid #e0e0e0;
-      border-radius: 6px;
-      padding: 15px;
-      margin-bottom: 15px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 3px;
+      padding: 12px;
+      margin-bottom: 10px;
     }
 
     .setting-group h4 {
-      margin: 0 0 10px 0;
-      color: #333;
-      font-size: 14px;
-      font-weight: bold;
-      border-bottom: 1px solid #eee;
-      padding-bottom: 8px;
+      margin: 0 0 8px 0;
+      color: #495057;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 5px;
     }
 
     .setting-group label {
       display: block;
-      margin-bottom: 8px;
-      font-size: 13px;
-      color: #555;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #6c757d;
     }
 
     .setting-group input[type="checkbox"] {
-      margin-right: 8px;
+      margin-right: 6px;
     }
 
     .setting-group select,
     .setting-group input[type="number"],
     .setting-group input[type="range"] {
       width: 100%;
-      padding: 6px 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 13px;
+      padding: 4px 8px;
+      border: 1px solid #ced4da;
+      border-radius: 3px;
+      font-size: 12px;
+      background: white;
     }
 
     /* 响应式设计 */
