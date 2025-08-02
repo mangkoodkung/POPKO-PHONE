@@ -1,13 +1,100 @@
 /**
  * 智能媒体助手插件样式
  * 作者: kencuo
- * 版本: 2.0.0
+ * 版本: 1.0.0
  */
 
 /* ==================== 基础样式 ==================== */
 
 .smart-media-assistant {
   font-family: 'Microsoft YaHei', Arial, sans-serif;
+}
+
+/* ==================== 收缩栏样式 ==================== */
+
+.smart-media-collapsible {
+  border: 1px solid #444;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: #2a2a2a;
+  box-shadow: none;
+  transition: all 0.2s ease;
+}
+
+.smart-media-collapsible:hover {
+  border-color: #555;
+}
+
+.smart-media-header {
+  background: #333;
+  color: #ccc;
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  user-select: none;
+  list-style: none;
+  border: none;
+  outline: none;
+  border-bottom: 1px solid #444;
+}
+
+.smart-media-header:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.smart-media-header:active {
+  background: #2a2a2a;
+}
+
+.smart-media-header::-webkit-details-marker {
+  display: none;
+}
+
+.smart-media-icon {
+  font-size: 14px;
+  min-width: 16px;
+  text-align: center;
+  color: #888;
+}
+
+.smart-media-title {
+  flex: 1;
+  font-weight: normal;
+  color: #ccc;
+}
+
+.smart-media-version {
+  background: #555;
+  color: #ccc;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: normal;
+}
+
+.smart-media-collapse-indicator {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: #888;
+  min-width: 12px;
+  text-align: center;
+}
+
+.smart-media-collapsible[open] .smart-media-collapse-indicator {
+  transform: rotate(180deg);
+}
+
+.smart-media-content {
+  padding: 15px;
+  background: #2a2a2a;
+  border-top: none;
 }
 
 /* ==================== 文件处理状态样式 ==================== */
@@ -36,7 +123,7 @@
 }
 
 .smart-media-success {
-  border: 2px solid #4CAF50 !important;
+  border: 2px solid #4caf50 !important;
   border-radius: 6px;
   box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
   transition: all 0.3s ease;
@@ -67,7 +154,7 @@
 }
 
 .smart-media-drop-zone.dragover {
-  border-color: #4CAF50;
+  border-color: #4caf50;
   background: rgba(76, 175, 80, 0.1);
   transform: scale(1.02);
 }
@@ -137,7 +224,7 @@
 }
 
 .smart-media-preview .btn-process {
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
 }
 
@@ -180,18 +267,17 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
   animation: progress-shine 2s infinite;
 }
 
 @keyframes progress-shine {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* ==================== 设置面板样式 ==================== */
@@ -265,12 +351,12 @@
 }
 
 .smart-media-status.loading {
-  background: #2196F3;
+  background: #2196f3;
   color: white;
 }
 
 .smart-media-status.success {
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
 }
 
@@ -280,7 +366,7 @@
 }
 
 .smart-media-status.warning {
-  background: #FF9800;
+  background: #ff9800;
   color: white;
 }
 
@@ -295,20 +381,20 @@
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .smart-media-preview .file-actions {
     width: 100%;
     justify-content: flex-end;
   }
-  
+
   .smart-media-drop-zone {
     padding: 15px;
   }
-  
+
   .smart-media-drop-zone .icon {
     font-size: 36px;
   }
-  
+
   .smart-media-settings {
     padding: 10px;
   }
@@ -328,7 +414,8 @@
 }
 
 @keyframes smart-media-pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
   }
   50% {
@@ -375,41 +462,41 @@
 
 /* ==================== 深色主题适配 ==================== */
 
-[data-theme="dark"] .smart-media-settings {
+[data-theme='dark'] .smart-media-settings {
   background: #2a2a2a;
   color: #e0e0e0;
 }
 
-[data-theme="dark"] .smart-media-settings h3 {
+[data-theme='dark'] .smart-media-settings h3 {
   color: #e0e0e0;
 }
 
-[data-theme="dark"] .smart-media-setting-label {
+[data-theme='dark'] .smart-media-setting-label {
   color: #ccc;
 }
 
-[data-theme="dark"] .smart-media-setting-input {
+[data-theme='dark'] .smart-media-setting-input {
   background: #333;
   border-color: #555;
   color: #e0e0e0;
 }
 
-[data-theme="dark"] .smart-media-setting-input:focus {
+[data-theme='dark'] .smart-media-setting-input:focus {
   border-color: #667eea;
 }
 
-[data-theme="dark"] .smart-media-preview {
+[data-theme='dark'] .smart-media-preview {
   background: #2a2a2a;
   border-color: #555;
   color: #e0e0e0;
 }
 
-[data-theme="dark"] .smart-media-drop-zone {
+[data-theme='dark'] .smart-media-drop-zone {
   background: rgba(255, 255, 255, 0.02);
   border-color: #555;
   color: #ccc;
 }
 
-[data-theme="dark"] .smart-media-drop-zone:hover {
+[data-theme='dark'] .smart-media-drop-zone:hover {
   background: rgba(102, 126, 234, 0.1);
 }
