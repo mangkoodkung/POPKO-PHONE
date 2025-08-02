@@ -337,7 +337,7 @@ class DocumentProcessor {
 
   async processDocument(file) {
     // 验证文件
-    FileValidator.validateDocument(file);
+    FileValidator.validate(file, 'document');
 
     let content = '';
 
