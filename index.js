@@ -584,38 +584,50 @@ function addPluginStyles() {
   style.textContent = `
     /* 动态样式补充 */
     .smart-media-assistant .setting-group {
-      margin-bottom: 20px;
+      margin-bottom: 15px;
+      padding: 12px;
+      border: 1px solid #444;
+      border-radius: 3px;
+      background: #333;
     }
 
     .smart-media-assistant .setting-group h4 {
       margin: 0 0 10px 0;
-      color: #333;
-      font-size: 14px;
-      font-weight: 600;
+      color: #ccc;
+      font-size: 13px;
+      font-weight: normal;
+      border-bottom: 1px solid #444;
+      padding-bottom: 6px;
     }
 
     .smart-media-assistant label {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       margin-bottom: 8px;
       cursor: pointer;
+      color: #bbb;
+      font-size: 12px;
     }
 
     .smart-media-assistant input[type="checkbox"] {
       margin: 0;
+      accent-color: #666;
     }
 
     .smart-media-assistant input[type="range"] {
       width: 100%;
-      margin: 5px 0;
+      margin: 4px 0;
+      accent-color: #666;
     }
 
     .smart-media-assistant .setting-description {
-      font-size: 12px;
-      color: #666;
-      margin-top: 5px;
-      line-height: 1.4;
+      font-size: 10px;
+      color: #888;
+      margin-top: 3px;
+      margin-left: 20px;
+      line-height: 1.2;
+      font-style: italic;
     }
   `;
 
