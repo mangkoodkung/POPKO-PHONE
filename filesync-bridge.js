@@ -831,94 +831,153 @@ async function sendDocumentToChat(content, fileName, context) {
 /**
  * 外部接口 - 文档处理入口
  */
-window.__processDocumentByPlugin = async function (documentFile, options = {}) {
-  try {
-    if (!documentFile) {
-      throw new Error('请提供文档文件');
-    }
-
-    if (!pluginConfig.enableDocumentProcessing) {
-      throw new Error('文档处理功能已禁用');
-    }
-
-    // 显示处理信息
-    if (pluginConfig.showProcessingInfo) {
-      toastr.info('正在处理文档...', '文档处理');
-    }
-
-    const processor = new DocumentProcessor();
-    const result = await processor.processDocument(documentFile);
-
-    // 获取上下文信息
-    const context = await ContextProvider.getCurrentContext();
-
-    // 如果启用AI阅读，调用SillyTavern的AI功能
-    if (pluginConfig.enableAIReading && options.enableAIReading !== false) {
-      try {
-        // 构建AI阅读提示
-        const aiPrompt = options.aiPrompt || `请阅读并总结以下文档内容，提供详细的分析和见解：`;
-
-        // 调用SillyTavern的AI生成功能
-        const aiResult = await callSillyTavernAI(aiPrompt, {
-          documentContent: result.content,
-          fileName: documentFile.name,
-          fileType: result.type,
-        });
-
-        if (aiResult) {
-          result.aiAnalysis = aiResult;
-          console.log('[Document Processor] AI阅读完成');
-
-          // 如果启用自动发送到聊天，将AI分析结果发送到聊天中
-          if (options.sendToChat !== false) {
-            await sendAnalysisToChat(aiResult, documentFile.name, context);
-          }
-        }
-      } catch (aiError) {
-        console.warn('[Document Processor] AI阅读失败:', aiError);
-        // 即使AI分析失败，也可以将原始内容发送到聊天
-        if (options.sendToChat !== false && options.sendRawContent) {
-          await sendDocumentToChat(result.content, documentFile.name, context);
-        }
-      }
-    } else if (options.sendToChat !== false && options.sendRawContent) {
-      // 如果没有启用AI阅读但要求发送原始内容到聊天
-      await sendDocumentToChat(result.content, documentFile.name, context);
-    }
-
-    // 显示成功信息
-    if (pluginConfig.showProcessingInfo) {
-      toastr.success(`文档处理完成！类型: ${result.type}`, '处理成功');
-    }
-
-    console.log('[Document Processor] 处理完成:', {
-      文件: documentFile.name,
-      类型: result.type,
-      大小: `${documentFile.size} bytes`,
-      内容长度: `${result.content.length} chars`,
-    });
-
-    return {
-      success: true,
-      content: result.content,
-      metadata: {
-        originalName: documentFile.name,
-        type: result.type,
-        size: documentFile.size,
-        contentLength: result.content.length,
-        character: context.characterName,
-        timestamp: result.timestamp,
-      },
-    };
-  } catch (error) {
-    console.error('[Document Processor] 处理失败:', error.message);
-
-    if (pluginConfig.showProcessingInfo) {
-      toastr.error(error.message, '处理失败');
-    }
-
-    throw new Error(`文档处理失败: ${error.message}`);
+window.__processDocumentByPlugin = async function (file, options = {}) {
+  if (!file || typeof file !== 'object') {
+    throw new Error('请选择文档文件！');
   }
+
+  // 验证文件类型
+  const supportedTypes = pluginConfig.documentFormats || [
+    'text/plain',
+    'application/json',
+    'text/markdown',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/html',
+    'text/xml',
+  ];
+
+  if (!supportedTypes.includes(file.type)) {
+    throw new Error(`不支持的文档格式: ${file.type}`);
+  }
+
+  // 验证文件大小
+  const maxSize = pluginConfig.documentMaxSize || 50 * 1024 * 1024;
+  if (file.size > maxSize) {
+    throw new Error(`文件过大，限制: ${Math.round(maxSize / 1024 / 1024)}MB`);
+  }
+
+  // 读取文档内容
+  const content = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = function (e) {
+      try {
+        let content = e.target.result;
+
+        // 根据文件类型处理内容
+        switch (file.type) {
+          case 'text/plain':
+          case 'text/markdown':
+          case 'text/html':
+          case 'text/xml':
+            resolve(content);
+            break;
+
+          case 'application/json':
+            // 格式化JSON
+            try {
+              const jsonObj = JSON.parse(content);
+              resolve(JSON.stringify(jsonObj, null, 2));
+            } catch {
+              resolve(content);
+            }
+            break;
+
+          default:
+            resolve(content);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsText(file, 'UTF-8');
+  });
+
+  // 获取上下文信息 - 使用与图片处理相同的方式
+  const ctx = getContext();
+  const currentCharacterId = ctx.characterId;
+  const characters = ctx.characters;
+  const character = characters[currentCharacterId];
+  const characterName = character ? character.name : 'unknown';
+
+  // 生成文件名 - 使用与图片处理相同的方式
+  const fileNamePrefix = `${Date.now()}_${getStringHash(file.name)}`;
+  const extension = file.name.split('.').pop() || 'txt';
+
+  // 保存文档到本地（类似图片处理）
+  let documentUrl = null;
+  if (options.saveToLocal !== false) {
+    const base64Content = btoa(unescape(encodeURIComponent(content)));
+    documentUrl = await saveBase64AsFile(base64Content, `${characterName}/documents`, fileNamePrefix, extension);
+  }
+
+  // 如果启用AI分析并且需要发送到聊天
+  if (pluginConfig.enableAIReading && options.enableAIReading !== false && options.sendToChat !== false) {
+    try {
+      // 构建AI提示
+      const aiPrompt = options.aiPrompt || `请分析这个文档的内容：${file.name}`;
+
+      // 调用SillyTavern的generate函数
+      const generateFn =
+        typeof generate === 'function'
+          ? generate
+          : window.parent && typeof window.parent.generate === 'function'
+          ? window.parent.generate
+          : top && typeof top.generate === 'function'
+          ? top.generate
+          : null;
+
+      if (generateFn) {
+        // 构建消息内容
+        const message = `${aiPrompt}\n\n文档内容：\n${content}`;
+
+        // 发送到聊天让AI分析
+        await generateFn(message);
+
+        console.log('[Document Processor] 文档已发送到聊天进行AI分析');
+      } else {
+        console.warn('[Document Processor] 无法找到generate函数');
+      }
+    } catch (aiError) {
+      console.warn('[Document Processor] AI分析失败:', aiError);
+    }
+  } else if (options.sendToChat !== false && options.sendRawContent) {
+    // 如果只需要发送原始内容
+    try {
+      const generateFn =
+        typeof generate === 'function'
+          ? generate
+          : window.parent && typeof window.parent.generate === 'function'
+          ? window.parent.generate
+          : top && typeof top.generate === 'function'
+          ? top.generate
+          : null;
+
+      if (generateFn) {
+        const message = `我上传了一个文档：${file.name}\n\n内容：\n${content}`;
+        await generateFn(message);
+      }
+    } catch (error) {
+      console.warn('[Document Processor] 发送原始内容失败:', error);
+    }
+  }
+
+  return {
+    success: true,
+    url: documentUrl,
+    content: content,
+    metadata: {
+      originalName: file.name,
+      type: file.type,
+      size: file.size,
+      contentLength: content.length,
+      character: characterName,
+      timestamp: new Date().toISOString(),
+    },
+  };
 };
 
 /**
