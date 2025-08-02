@@ -1,442 +1,1634 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>插件折叠功能测试</title>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-        background: #f5f5f5;
-      }
+/**
+ *  不知道能不能发送文件啊，试试吧- SillyTavern Extension
+ * 作者: kencuo
+ * 版本: 1.0.0
+ * GitHub: https://github.com/kencuo/chajian
+ */
 
-      .container {
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-      }
+// 导入SillyTavern核心模块
+import { saveSettingsDebounced } from '../../../../script.js';
+import { getContext } from '../../../extensions.js';
+import { getBase64Async, getStringHash, saveBase64AsFile } from '../../../utils.js';
 
-      /* 模拟SillyTavern的扩展设置区域 */
-      #extensions_settings {
-        background: #f8f9fa;
-        padding: 20px;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-      }
+// 插件元数据
+const PLUGIN_ID = 'visual-bridge-kencuo';
+const MODULE_NAME = 'third-party-image-processor';
+const UPDATE_INTERVAL = 1000;
+const PLUGIN_VERSION = '1.0.0';
+const PLUGIN_AUTHOR = 'kencuo';
 
-      .test-info {
-        background: #e3f2fd;
-        border: 1px solid #2196f3;
-        border-radius: 6px;
-        padding: 15px;
-        margin-bottom: 20px;
-        color: #1976d2;
-      }
+// 配置常量
+const CONFIG_DEFAULTS = {
+  active: true,
+  optimizationMode: 'smart', // 'smart', 'quality', 'speed'
+  qualityLevel: 85, // 0-100
+  maxDimension: 2048,
+  fileLimit: 20, // MB
+  formatSupport: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  organizationMode: 'hybrid', // 'hybrid', 'chronological', 'character'
+  enableMetrics: true,
 
-      .success {
-        background: #e8f5e8;
-        border-color: #4caf50;
-        color: #2e7d32;
-      }
+  // 新增的设置项 - 默认保持原有行为
+  processingMode: 'smart', // 使用原有的智能模式，而不是新的压缩模式
+  maxWidth: 1920,
+  maxHeight: 1080,
+  quality: 0.85,
+  compressionMode: 'adaptive', // 'adaptive', 'quality', 'size'
+  maxFileSize: 20 * 1024 * 1024, // 与原有的fileLimit保持一致
+  allowedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+  enableWebP: true,
+  autoOptimize: true,
+  showProcessingInfo: false, // 默认不显示处理信息，保持原有的静默行为
+  enableLogging: false, // 默认不启用调试日志
+  storagePath: 'user/images',
+  useTimestamp: true,
+  useUniqueId: true,
+  simpleMode: false, // 默认不启用简单模式，使用原有的完整处理
 
-      button {
-        background: #007bff;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 5px;
-        cursor: pointer;
-        margin: 5px;
-      }
+  // 文档处理设置
+  enableDocumentProcessing: true, // 启用文档处理功能
+  documentFormats: [
+    'text/plain',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/json',
+    'text/markdown',
+    'text/csv',
+    'application/rtf',
+    'text/html',
+    'text/xml',
+    'application/xml',
+  ],
+  documentMaxSize: 50 * 1024 * 1024, // 文档最大50MB
+  enableAIReading: true, // 启用AI阅读功能
+  documentStoragePath: 'user/documents',
+};
 
-      button:hover {
-        background: #0056b3;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>🖼️ 插件折叠功能测试</h1>
+// 全局配置管理
+window.extension_settings = window.extension_settings || {};
+window.extension_settings[PLUGIN_ID] = window.extension_settings[PLUGIN_ID] || {};
+const pluginConfig = window.extension_settings[PLUGIN_ID];
 
-      <div class="test-info">
-        <h3>📋 测试说明</h3>
-        <p>这个页面模拟了SillyTavern的扩展设置环境，用于测试智能媒体处理助手的折叠功能。</p>
-        <ul>
-          <li>点击插件标题栏可以展开/收起设置面板</li>
-          <li>折叠状态会自动保存到localStorage</li>
-          <li>刷新页面后会保持上次的折叠状态</li>
-          <li>低调的原生风格，与SillyTavern完美融合</li>
-        </ul>
-      </div>
+// 初始化默认配置
+for (const [key, value] of Object.entries(CONFIG_DEFAULTS)) {
+  if (pluginConfig[key] === undefined) {
+    pluginConfig[key] = value;
+  }
+}
 
-      <div class="container">
-        <h2>🔧 模拟SillyTavern扩展设置区域</h2>
-        <div id="extensions_settings">
-          <!-- 插件设置界面将在这里动态生成 -->
-          <p style="color: #666; text-align: center; padding: 20px">正在加载插件设置界面...</p>
-        </div>
-      </div>
+// 全局变量
+let extensionSettings = {};
+let isProcessing = false;
+let processingQueue = [];
 
-      <div class="container">
-        <h2>🧪 功能测试</h2>
-        <button onclick="testCollapse()">测试折叠功能</button>
-        <button onclick="testSaveState()">测试状态保存</button>
-        <button onclick="clearSavedState()">清除保存状态</button>
-        <button onclick="reloadPlugin()">重新加载插件</button>
+/**
+ * 图像优化引擎
+ */
+class ImageOptimizer {
+  constructor() {
+    this.canvas = null;
+    this.context = null;
+    this.metrics = {
+      processed: 0,
+      totalSaved: 0,
+      avgCompressionRatio: 0,
+    };
+  }
 
-        <div
-          id="testResults"
-          style="
-            margin-top: 15px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 12px;
-            white-space: pre-wrap;
-          "
-        ></div>
-      </div>
-    </div>
+  /**
+   * 初始化画布
+   */
+  initCanvas() {
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+      this.context = this.canvas.getContext('2d');
+    }
+  }
 
-    <script>
-      // 模拟SillyTavern环境
-      window.extension_settings = window.extension_settings || {};
+  /**
+   * 智能图像处理
+   */
+  async optimizeImage(file, options = {}) {
+    this.initCanvas();
 
-      // 模拟toastr通知
-      window.toastr = {
-        success: (message, title) => console.log(`✅ ${title}: ${message}`),
-        info: (message, title) => console.log(`ℹ️ ${title}: ${message}`),
-        warning: (message, title) => console.log(`⚠️ ${title}: ${message}`),
-        error: (message, title) => console.log(`❌ ${title}: ${message}`),
+    const mode = options.mode || pluginConfig.optimizationMode;
+    const quality = (options.quality || pluginConfig.qualityLevel) / 100;
+    const maxSize = options.maxSize || pluginConfig.maxDimension;
+
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+
+      image.onload = () => {
+        try {
+          const dimensions = this.calculateOptimalSize(image.width, image.height, maxSize, mode);
+
+          this.canvas.width = dimensions.width;
+          this.canvas.height = dimensions.height;
+
+          // 应用优化算法
+          this.applyOptimization(image, dimensions, mode);
+
+          // 生成优化后的数据
+          const optimizedData = this.canvas.toDataURL(file.type, quality);
+
+          // 更新性能指标
+          this.updateMetrics(file.size, optimizedData.length);
+
+          resolve(optimizedData);
+        } catch (error) {
+          reject(error);
+        }
       };
 
-      // 模拟SillyTavern的保存函数
-      window.saveSettingsDebounced = () => {
-        console.log('💾 设置已保存');
+      image.onerror = () => reject(new Error('图像加载失败'));
+      image.src = URL.createObjectURL(file);
+    });
+  }
+
+  /**
+   * 计算最优尺寸
+   */
+  calculateOptimalSize(width, height, maxSize, mode) {
+    let newWidth = width;
+    let newHeight = height;
+
+    if (mode === 'speed' && (width > maxSize || height > maxSize)) {
+      // 快速模式：简单等比缩放
+      const ratio = Math.min(maxSize / width, maxSize / height);
+      newWidth = Math.floor(width * ratio);
+      newHeight = Math.floor(height * ratio);
+    } else if (mode === 'quality') {
+      // 质量模式：保持更高分辨率
+      const ratio = Math.min((maxSize * 1.2) / width, (maxSize * 1.2) / height);
+      if (ratio < 1) {
+        newWidth = Math.floor(width * ratio);
+        newHeight = Math.floor(height * ratio);
+      }
+    } else {
+      // 智能模式：根据图像特征自适应
+      const aspectRatio = width / height;
+      if (aspectRatio > 2 || aspectRatio < 0.5) {
+        // 极端宽高比，使用保守压缩
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        if (ratio < 1) {
+          newWidth = Math.floor(width * ratio);
+          newHeight = Math.floor(height * ratio);
+        }
+      } else {
+        // 标准宽高比，可以更激进压缩
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        newWidth = Math.floor(width * ratio);
+        newHeight = Math.floor(height * ratio);
+      }
+    }
+
+    return { width: newWidth, height: newHeight };
+  }
+
+  /**
+   * 应用优化算法
+   */
+  applyOptimization(image, dimensions, mode) {
+    if (mode === 'quality') {
+      // 质量模式：使用双线性插值
+      this.context.imageSmoothingEnabled = true;
+      this.context.imageSmoothingQuality = 'high';
+    } else if (mode === 'speed') {
+      // 速度模式：关闭平滑
+      this.context.imageSmoothingEnabled = false;
+    } else {
+      // 智能模式：自适应平滑
+      this.context.imageSmoothingEnabled = true;
+      this.context.imageSmoothingQuality = 'medium';
+    }
+
+    this.context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+  }
+
+  /**
+   * 更新性能指标
+   */
+  updateMetrics(originalSize, optimizedSize) {
+    if (!pluginConfig.enableMetrics) return;
+
+    this.metrics.processed++;
+    const saved = originalSize - optimizedSize;
+    this.metrics.totalSaved += saved;
+
+    const compressionRatio = (saved / originalSize) * 100;
+    this.metrics.avgCompressionRatio =
+      (this.metrics.avgCompressionRatio * (this.metrics.processed - 1) + compressionRatio) / this.metrics.processed;
+  }
+
+  /**
+   * 唯一ID生成
+   * @returns {string} 唯一标识符
+   */
+  generateUniqueId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 11);
+    return `img_${timestamp}_${random}`;
+  }
+
+  /**
+   * 智能路径生成
+   * @param {string} originalName 原始文件名
+   * @param {string} format 输出格式
+   * @returns {string} 生成的文件路径
+   */
+  generateStoragePath(originalName, format = 'webp') {
+    const { storagePath, useTimestamp, useUniqueId } = pluginConfig;
+
+    let fileName = originalName.split('.')[0];
+
+    if (useTimestamp) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      fileName += `_${timestamp}`;
+    }
+
+    if (useUniqueId) {
+      const uniqueId = this.generateUniqueId().split('_').pop();
+      fileName += `_${uniqueId}`;
+    }
+
+    const fullPath = `${storagePath}/${fileName}.${format}`;
+    this.log(`生成存储路径: ${fullPath}`);
+
+    return fullPath;
+  }
+
+  /**
+   * 获取性能报告
+   */
+  getMetrics() {
+    return { ...this.metrics };
+  }
+}
+
+/**
+ * 文件验证器 - 支持图像和文档
+ */
+class FileValidator {
+  static validate(file, fileType = 'image') {
+    if (!file || typeof file !== 'object') {
+      throw new Error('无效的文件对象');
+    }
+
+    if (fileType === 'image') {
+      if (!file.type || !file.type.startsWith('image/')) {
+        throw new Error('仅支持图像文件');
+      }
+
+      if (!pluginConfig.formatSupport.includes(file.type)) {
+        throw new Error(`不支持的格式: ${file.type}`);
+      }
+    } else if (fileType === 'document') {
+      const supportedDocs = [
+        'text/plain',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/json',
+        'text/markdown',
+      ];
+
+      if (!supportedDocs.includes(file.type)) {
+        throw new Error(`不支持的文档格式: ${file.type}`);
+      }
+    }
+
+    const maxBytes = pluginConfig.fileLimit * 1024 * 1024;
+    if (file.size > maxBytes) {
+      throw new Error(`文件过大，限制: ${pluginConfig.fileLimit}MB`);
+    }
+
+    return true;
+  }
+
+  static generateUniqueId(filename) {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 10);
+    const hash = this.simpleHash(filename);
+    return `vb_${timestamp}_${hash}_${random}`;
+  }
+
+  static simpleHash(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) + hash + str.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(36);
+  }
+}
+
+/**
+ * 文档处理器
+ */
+class DocumentProcessor {
+  constructor() {
+    this.supportedTypes = pluginConfig.documentFormats || [
+      'text/plain',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+  }
+
+  async processDocument(file) {
+    // 验证文件
+    FileValidator.validate(file, 'document');
+
+    let content = '';
+
+    switch (file.type) {
+      case 'text/plain':
+      case 'text/markdown':
+      case 'text/csv':
+      case 'text/html':
+      case 'text/xml':
+      case 'application/xml':
+      case 'application/rtf':
+        content = await this.readTextFile(file);
+        break;
+      case 'application/pdf':
+        content = await this.readPDFFile(file);
+        break;
+      case 'application/json':
+        content = await this.readJSONFile(file);
+        break;
+      case 'application/msword':
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        content = await this.readWordFile(file);
+        break;
+      default:
+        throw new Error(`暂不支持的文档类型: ${file.type}`);
+    }
+
+    return {
+      content,
+      type: file.type,
+      name: file.name,
+      size: file.size,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  async readTextFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file, 'UTF-8');
+    });
+  }
+
+  async readJSONFile(file) {
+    const text = await this.readTextFile(file);
+    try {
+      const json = JSON.parse(text);
+      return JSON.stringify(json, null, 2);
+    } catch (error) {
+      return text; // 如果不是有效JSON，返回原文本
+    }
+  }
+
+  async readPDFFile(file) {
+    // 注意：这里需要PDF.js库来解析PDF
+    // 简化版本，实际使用时需要引入PDF.js
+    throw new Error('PDF处理需要额外的库支持，请使用SillyTavern的Data Bank功能');
+  }
+
+  async readWordFile(file) {
+    // Word文档处理
+    // 对于.doc和.docx文件，我们尝试基础的文本提取
+    try {
+      // 首先尝试作为文本文件读取（可能包含一些格式字符）
+      const rawContent = await this.readTextFile(file);
+
+      // 简单的文本清理，移除一些常见的Word格式字符
+      let cleanContent = rawContent
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // 移除控制字符
+        .replace(/\r\n/g, '\n') // 统一换行符
+        .replace(/\n{3,}/g, '\n\n') // 合并多余的空行
+        .trim();
+
+      // 如果内容看起来像是二进制数据（包含太多不可打印字符），提供提示
+      const printableChars = cleanContent.replace(/[^\x20-\x7E\n\t]/g, '').length;
+      const totalChars = cleanContent.length;
+
+      if (totalChars > 0 && printableChars / totalChars < 0.7) {
+        return `[Word文档] ${file.name}
+
+注意：这是一个Word文档文件，当前只能进行基础的文本提取。
+文件大小：${(file.size / 1024).toFixed(2)} KB
+
+建议：
+1. 将Word文档另存为.txt格式后重新上传，以获得更好的文本提取效果
+2. 或者复制文档内容，使用"文字描述"模式发送
+3. 使用SillyTavern的Data Bank功能来处理复杂的Word文档
+
+提取的部分内容：
+${cleanContent.substring(0, 500)}${cleanContent.length > 500 ? '...' : ''}`;
+      }
+
+      return cleanContent || `[Word文档] ${file.name}\n\n文档内容无法直接提取，建议转换为文本格式后重新上传。`;
+    } catch (error) {
+      return `[Word文档] ${file.name}\n\n无法读取Word文档内容。建议：\n1. 将文档另存为.txt格式\n2. 或复制内容使用文字描述模式\n\n错误信息：${error.message}`;
+    }
+  }
+}
+
+/**
+ * 存储路径管理器
+ */
+class StorageManager {
+  static generatePath(characterName, mode = pluginConfig.organizationMode) {
+    const now = new Date();
+
+    switch (mode) {
+      case 'chronological':
+        return `visual-assets/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      case 'character':
+        return `characters/${characterName || 'unknown'}/visuals`;
+
+      case 'hybrid':
+      default:
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `visual-bridge/${characterName || 'default'}/${now.getFullYear()}-${month}`;
+    }
+  }
+
+  static generateDocumentPath(characterName, mode = 'hybrid') {
+    const now = new Date();
+    const basePath = pluginConfig.documentStoragePath || 'user/documents';
+
+    switch (mode) {
+      case 'chronological':
+        return `${basePath}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      case 'character':
+        return `${basePath}/${characterName || 'unknown'}`;
+
+      case 'hybrid':
+      default:
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `${basePath}/${characterName || 'default'}/${now.getFullYear()}-${month}`;
+    }
+  }
+}
+
+/**
+ * 上下文获取器
+ */
+class ContextProvider {
+  static async getCurrentContext() {
+    try {
+      const ctx = getContext();
+      const character = ctx.characters[ctx.characterId];
+
+      return {
+        characterId: ctx.characterId || 'default',
+        characterName: character?.name || 'unknown',
+        sessionId: ctx.chatId || 'session',
+      };
+    } catch (error) {
+      console.warn('[Visual Bridge] 上下文获取失败:', error);
+      return {
+        characterId: 'default',
+        characterName: 'unknown',
+        sessionId: 'fallback',
+      };
+    }
+  }
+}
+
+/**
+ * 主处理器
+ */
+class VisualBridge {
+  constructor() {
+    this.optimizer = new ImageOptimizer();
+    this.isReady = false;
+  }
+
+  async initialize() {
+    this.isReady = true;
+    console.log(`[Visual Bridge] v${PLUGIN_VERSION} 初始化完成`);
+  }
+
+  async processVisualFile(file, options = {}) {
+    if (!this.isReady) {
+      throw new Error('Visual Bridge 未初始化');
+    }
+
+    if (!pluginConfig.active) {
+      throw new Error('Visual Bridge 已禁用');
+    }
+
+    // 验证文件
+    FileValidator.validate(file);
+
+    // 获取上下文
+    const context = await ContextProvider.getCurrentContext();
+
+    // 处理图像
+    let imageData;
+    if (options.skipOptimization) {
+      imageData = await getBase64Async(file);
+    } else {
+      imageData = await this.optimizer.optimizeImage(file, options);
+    }
+
+    // 准备存储
+    const base64Content = imageData.split(',')[1];
+    const fileExtension = file.type.split('/')[1] || 'png';
+    const uniqueId = FileValidator.generateUniqueId(file.name);
+    const storagePath = StorageManager.generatePath(context.characterName);
+
+    // 保存文件
+    const savedUrl = await saveBase64AsFile(base64Content, storagePath, uniqueId, fileExtension);
+
+    return {
+      success: true,
+      url: savedUrl,
+      metadata: {
+        originalName: file.name,
+        processedName: `${uniqueId}.${fileExtension}`,
+        originalSize: file.size,
+        processedSize: imageData.length,
+        format: file.type,
+        character: context.characterName,
+        optimized: !options.skipOptimization,
+        timestamp: new Date().toISOString(),
+        processingMode: pluginConfig.optimizationMode,
+      },
+    };
+  }
+}
+
+// 创建全局实例
+const visualBridge = new VisualBridge();
+
+// 全局图像处理器实例
+let imageProcessor = null;
+
+/**
+ * 外部接口 - 图像处理入口
+ */
+window.__uploadImageByPlugin = async function (imageFile, processingOptions = {}) {
+  try {
+    if (!imageFile) {
+      throw new Error('请提供图像文件');
+    }
+
+    // 检查是否启用了简单模式
+    if (extensionSettings.simpleMode || pluginConfig.simpleMode) {
+      return await simpleUploadMode(imageFile);
+    }
+
+    // 默认使用原有的Visual Bridge处理方式
+    // 显示处理信息（仅在用户启用时）
+    if (pluginConfig.showProcessingInfo) {
+      const modeText = pluginConfig.processingMode === 'direct' ? '直接保存' : '智能处理';
+      toastr.info(`正在${modeText}图像...`, '图像上传');
+    }
+
+    const result = await visualBridge.processVisualFile(imageFile, processingOptions);
+
+    // 显示成功信息（仅在用户启用时）
+    if (pluginConfig.showProcessingInfo) {
+      const compressionRatio =
+        result.metadata.originalSize > 0
+          ? (
+              ((result.metadata.originalSize - result.metadata.processedSize) / result.metadata.originalSize) *
+              100
+            ).toFixed(2)
+          : '0.00';
+      const modeText = pluginConfig.processingMode === 'direct' ? '直接保存' : `压缩率: ${compressionRatio}%`;
+      toastr.success(`图像处理完成！${modeText}`, '上传成功');
+    }
+
+    console.log('[Visual Bridge] 处理完成:', {
+      文件: imageFile.name,
+      大小变化: `${imageFile.size} → ${result.metadata.processedSize}`,
+      存储位置: result.url,
+      优化模式: result.metadata.processingMode,
+    });
+
+    return {
+      url: result.url,
+      info: result.metadata,
+      success: true,
+      path: result.url,
+      size: result.metadata.processedSize,
+      format: result.metadata.format,
+      originalSize: result.metadata.originalSize,
+      compressionRatio:
+        result.metadata.originalSize > 0
+          ? (
+              ((result.metadata.originalSize - result.metadata.processedSize) / result.metadata.originalSize) *
+              100
+            ).toFixed(2)
+          : '0.00',
+    };
+  } catch (error) {
+    console.error('[Visual Bridge] 处理失败:', error.message);
+
+    if (pluginConfig.showProcessingInfo) {
+      toastr.error(error.message, '上传失败');
+    }
+
+    throw new Error(`图像处理失败: ${error.message}`);
+  } finally {
+    isProcessing = false;
+  }
+};
+
+/**
+ * SillyTavern AI接口封装
+ */
+async function callSillyTavernAI(prompt, context = {}) {
+  try {
+    // 获取SillyTavern的AI生成函数
+    const AI_GENERATE =
+      typeof generate === 'function'
+        ? generate
+        : window.parent && window.parent.generate
+        ? window.parent.generate
+        : top && top.generate
+        ? top.generate
+        : null;
+
+    // 获取generateRaw函数（用于直接生成回复）
+    const AI_GENERATE_RAW =
+      typeof generateRaw === 'function'
+        ? generateRaw
+        : window.parent && window.parent.generateRaw
+        ? window.parent.generateRaw
+        : top && top.generateRaw
+        ? top.generateRaw
+        : null;
+
+    if (!AI_GENERATE && !AI_GENERATE_RAW) {
+      throw new Error('SillyTavern AI接口不可用');
+    }
+
+    // 构建完整的分析提示
+    let fullPrompt = prompt;
+    if (context.documentContent) {
+      fullPrompt += `\n\n文档内容：\n${context.documentContent}`;
+    }
+    if (context.fileName) {
+      fullPrompt += `\n\n文件名：${context.fileName}`;
+    }
+
+    console.log('[SillyTavern AI] 发送文档分析请求...');
+
+    // 优先使用generateRaw，它更适合直接生成回复
+    if (AI_GENERATE_RAW) {
+      const result = await AI_GENERATE_RAW(fullPrompt, false, false, '', '');
+      if (result && typeof result === 'string') {
+        return result;
+      }
+    }
+
+    // 备用方案：使用generate函数
+    if (AI_GENERATE) {
+      const requestData = {
+        prompt: fullPrompt,
+        use_default_jailbreak: false,
+        force_name2: true,
+        quiet_prompt: true,
+        quiet_image: true,
+        skip_examples: false,
+        top_a: 0,
+        rep_pen: 1.1,
+        rep_pen_range: 1024,
+        rep_pen_slope: 0.9,
+        temperature: 0.7,
+        tfs: 1,
+        top_k: 0,
+        top_p: 0.9,
+        typical: 1,
+        sampler_order: [6, 0, 1, 3, 4, 2, 5],
+        singleline: false,
       };
 
-      // 模拟插件配置
-      const PLUGIN_VERSION = '2.1.0';
-      const PLUGIN_AUTHOR = 'ctrl';
-      const CONFIG_DEFAULTS = {
-        simpleMode: false,
-        processingMode: 'smart',
-        maxWidth: 1920,
-        maxHeight: 1080,
-        quality: 0.85,
-        compressionMode: 'adaptive',
-        maxFileSize: 20 * 1024 * 1024,
-        enableWebP: true,
-        autoOptimize: true,
-        showProcessingInfo: false,
-        enableLogging: false,
-      };
-
-      window.extension_settings['third-party-image-processor'] =
-        window.extension_settings['third-party-image-processor'] || {};
-      const pluginConfig = window.extension_settings['third-party-image-processor'];
-
-      // 初始化默认配置
-      for (const [key, value] of Object.entries(CONFIG_DEFAULTS)) {
-        if (pluginConfig[key] === undefined) {
-          pluginConfig[key] = value;
-        }
+      const result = await AI_GENERATE('', requestData);
+      if (result && typeof result === 'string') {
+        return result;
+      } else if (result && result.content) {
+        return result.content;
       }
+    }
 
-      // 测试函数
-      function testCollapse() {
-        const details = $('.extension-collapsible')[0];
-        if (details) {
-          if (details.hasAttribute('open')) {
-            details.removeAttribute('open');
-            updateTestResults('折叠测试：面板已收起');
-          } else {
-            details.setAttribute('open', '');
-            updateTestResults('折叠测试：面板已展开');
-          }
-        } else {
-          updateTestResults('错误：找不到折叠元素');
-        }
-      }
+    throw new Error('AI返回格式异常');
+  } catch (error) {
+    console.error('[SillyTavern AI] 调用失败:', error);
+    throw error;
+  }
+}
 
-      function testSaveState() {
-        const details = $('.extension-collapsible')[0];
-        if (details) {
-          const isOpen = details.hasAttribute('open');
-          const savedState = localStorage.getItem('third-party-image-processor-collapsed');
-          updateTestResults(`状态测试：
-当前状态: ${isOpen ? '展开' : '收起'}
-保存状态: ${savedState === 'true' ? '收起' : '展开'}
-localStorage值: ${savedState}`);
-        }
-      }
+/**
+ * 发送AI分析结果到聊天
+ */
+async function sendAnalysisToChat(analysisResult, fileName, context) {
+  try {
+    // 获取SillyTavern的聊天函数
+    const addOneMessage =
+      typeof window.addOneMessage === 'function'
+        ? window.addOneMessage
+        : window.parent && typeof window.parent.addOneMessage === 'function'
+        ? window.parent.addOneMessage
+        : top && typeof top.addOneMessage === 'function'
+        ? top.addOneMessage
+        : null;
 
-      function clearSavedState() {
-        localStorage.removeItem('third-party-image-processor-collapsed');
-        updateTestResults('状态清除：已清除保存的折叠状态');
-      }
+    const sendSystemMessage =
+      typeof window.sendSystemMessage === 'function'
+        ? window.sendSystemMessage
+        : window.parent && typeof window.parent.sendSystemMessage === 'function'
+        ? window.parent.sendSystemMessage
+        : top && typeof top.sendSystemMessage === 'function'
+        ? top.sendSystemMessage
+        : null;
 
-      function reloadPlugin() {
-        $('#extensions_settings')
-          .empty()
-          .html('<p style="color: #666; text-align: center; padding: 20px;">正在重新加载插件...</p>');
+    if (addOneMessage) {
+      // 构建消息内容
+      const messageContent = `📄 **文档分析结果** (${fileName})\n\n${analysisResult}`;
 
-        setTimeout(() => {
-          loadPluginInterface();
-          updateTestResults('插件重载：插件界面已重新加载');
-        }, 500);
-      }
-
-      function updateTestResults(message) {
-        const results = document.getElementById('testResults');
-        const timestamp = new Date().toLocaleTimeString();
-        results.textContent += `[${timestamp}] ${message}\n`;
-        results.scrollTop = results.scrollHeight;
-      }
-
-      // 加载插件界面
-      function loadPluginInterface() {
-        // 这里直接复制插件的HTML生成逻辑
-        const simpleModeChecked = pluginConfig.simpleMode ? 'checked' : '';
-        const smartModeSelected = pluginConfig.processingMode === 'smart' ? 'selected' : '';
-        const directModeSelected = pluginConfig.processingMode === 'direct' ? 'selected' : '';
-        const compressModeSelected = pluginConfig.processingMode === 'compress' ? 'selected' : '';
-        const adaptiveModeSelected = pluginConfig.compressionMode === 'adaptive' ? 'selected' : '';
-        const qualityModeSelected = pluginConfig.compressionMode === 'quality' ? 'selected' : '';
-        const sizeModeSelected = pluginConfig.compressionMode === 'size' ? 'selected' : '';
-        const maxFileSizeMB = Math.round(pluginConfig.maxFileSize / 1024 / 1024);
-        const qualityPercent = Math.round(pluginConfig.quality * 100);
-        const enableWebPChecked = pluginConfig.enableWebP ? 'checked' : '';
-        const autoOptimizeChecked = pluginConfig.autoOptimize ? 'checked' : '';
-        const showProcessingInfoChecked = pluginConfig.showProcessingInfo ? 'checked' : '';
-        const enableLoggingChecked = pluginConfig.enableLogging ? 'checked' : '';
-
-        // 添加样式
-        addCollapsibleStyles();
-
-        // 生成HTML
-        const settingsHtml = createSettingsHtml();
-        $('#extensions_settings').html(settingsHtml);
-
-        // 绑定事件
-        bindCollapsibleEvents();
-
-        updateTestResults('插件界面加载完成');
-      }
-
-      // 页面加载时初始化
-      $(document).ready(function () {
-        updateTestResults('页面加载完成，开始初始化插件界面...');
-        setTimeout(loadPluginInterface, 100);
+      // 添加助手消息到聊天
+      await addOneMessage({
+        name: context.characterName || 'Assistant',
+        is_user: false,
+        is_system: false,
+        send_date: new Date().toISOString(),
+        mes: messageContent,
+        extra: {
+          type: 'document_analysis',
+          file_name: fileName,
+          processed_by: 'smart_media_assistant',
+        },
       });
-    </script>
 
-    <!-- 这里会动态加载插件的样式和HTML生成函数 -->
-    <script>
-      // 复制插件的样式生成函数
-      function addCollapsibleStyles() {
-        const styleId = 'third-party-image-processor-collapsible-styles';
-        if (document.getElementById(styleId)) return;
+      console.log('[Chat Integration] AI分析结果已发送到聊天');
+    } else if (sendSystemMessage) {
+      // 备用方案：发送系统消息
+      await sendSystemMessage('system', `📄 文档分析完成：${fileName}\n\n${analysisResult}`);
+      console.log('[Chat Integration] AI分析结果已作为系统消息发送');
+    } else {
+      console.warn('[Chat Integration] 无法找到聊天发送函数');
+    }
+  } catch (error) {
+    console.error('[Chat Integration] 发送分析结果失败:', error);
+  }
+}
 
-        const style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = `
-                .third-party-image-processor-settings {
-                    margin-bottom: 20px;
-                }
+/**
+ * 发送原始文档内容到聊天
+ */
+async function sendDocumentToChat(content, fileName, context) {
+  try {
+    const addOneMessage =
+      typeof window.addOneMessage === 'function'
+        ? window.addOneMessage
+        : window.parent && typeof window.parent.addOneMessage === 'function'
+        ? window.parent.addOneMessage
+        : top && typeof top.addOneMessage === 'function'
+        ? top.addOneMessage
+        : null;
 
-                .extension-collapsible {
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    margin-bottom: 15px;
-                    overflow: hidden;
-                    background: #f9f9f9;
-                    box-shadow: none;
-                }
+    if (addOneMessage) {
+      // 限制内容长度，避免聊天界面过于拥挤
+      const maxLength = 2000;
+      const truncatedContent =
+        content.length > maxLength ? content.substring(0, maxLength) + '\n\n...(内容已截断)' : content;
 
-                .extension-header {
-                    background: #f8f9fa;
-                    color: #495057;
-                    padding: 6px 10px;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 6px;
-                    font-weight: 500;
-                    font-size: 13px;
-                    transition: background-color 0.2s ease;
-                    user-select: none;
-                    list-style: none;
-                    border-bottom: 1px solid #dee2e6;
-                    min-height: 32px;
-                }
+      const messageContent = `📄 **文档内容** (${fileName})\n\n${truncatedContent}`;
 
-                .extension-header:hover {
-                    background: #e9ecef;
-                    transform: none;
-                    box-shadow: none;
-                }
+      await addOneMessage({
+        name: 'User',
+        is_user: true,
+        is_system: false,
+        send_date: new Date().toISOString(),
+        mes: messageContent,
+        extra: {
+          type: 'document_upload',
+          file_name: fileName,
+          processed_by: 'smart_media_assistant',
+        },
+      });
 
-                .extension-header::-webkit-details-marker {
-                    display: none;
-                }
+      console.log('[Chat Integration] 文档内容已发送到聊天');
+    }
+  } catch (error) {
+    console.error('[Chat Integration] 发送文档内容失败:', error);
+  }
+}
 
-                .extension-icon {
-                    font-size: 13px;
-                }
+/**
+ * 外部接口 - 文档处理入口
+ */
+window.__processDocumentByPlugin = async function (file, options = {}) {
+  try {
+    if (!file || typeof file !== 'object') {
+      throw new Error('请选择文档文件！');
+    }
 
-                .extension-title {
-                    font-weight: 500;
-                    text-align: center;
-                }
+    // 显示处理开始提示
+    if (typeof toastr !== 'undefined') {
+      toastr.info('正在处理文档...', '文档上传');
+    }
 
-                .extension-version {
-                    background: #6c757d;
-                    color: white;
-                    padding: 1px 5px;
-                    border-radius: 2px;
-                    font-size: 9px;
-                    font-weight: normal;
-                    opacity: 0.8;
-                }
+    // 验证文件类型
+    const supportedTypes = pluginConfig.documentFormats || [
+      'text/plain',
+      'application/json',
+      'text/markdown',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/html',
+      'text/xml',
+    ];
 
-                .collapse-indicator {
-                    font-size: 9px;
-                    transition: transform 0.2s ease;
-                    color: #6c757d;
-                    opacity: 0.7;
-                }
+    if (!supportedTypes.includes(file.type)) {
+      throw new Error(`不支持的文档格式: ${file.type}`);
+    }
 
-                .extension-collapsible[open] .collapse-indicator {
-                    transform: rotate(180deg);
-                }
+    // 验证文件大小
+    const maxSize = pluginConfig.documentMaxSize || 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new Error(`文件过大，限制: ${Math.round(maxSize / 1024 / 1024)}MB`);
+    }
 
-                .extension-content {
-                    padding: 15px;
-                    background: #fff;
-                    border-top: none;
-                }
+    // 读取文档内容
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
 
-                .setting-group {
-                    background: #f8f9fa;
-                    border: 1px solid #dee2e6;
-                    border-radius: 3px;
-                    padding: 12px;
-                    margin-bottom: 10px;
-                }
+      reader.onload = function (e) {
+        try {
+          let content = e.target.result;
 
-                .setting-group h4 {
-                    margin: 0 0 8px 0;
-                    color: #495057;
-                    font-size: 13px;
-                    font-weight: 600;
-                    border-bottom: 1px solid #dee2e6;
-                    padding-bottom: 5px;
-                }
-            `;
+          // 根据文件类型处理内容
+          switch (file.type) {
+            case 'text/plain':
+            case 'text/markdown':
+            case 'text/html':
+            case 'text/xml':
+              resolve(content);
+              break;
 
-        document.head.appendChild(style);
-      }
+            case 'application/json':
+              // 格式化JSON
+              try {
+                const jsonObj = JSON.parse(content);
+                resolve(JSON.stringify(jsonObj, null, 2));
+              } catch {
+                resolve(content);
+              }
+              break;
 
-      // 复制插件的HTML生成函数（简化版）
-      function createSettingsHtml() {
-        const simpleModeChecked = pluginConfig.simpleMode ? 'checked' : '';
-
-        return `
-                <div class="third-party-image-processor-settings">
-                    <details class="extension-collapsible" open>
-                        <summary class="extension-header">
-                            <span class="extension-icon">🖼️</span>
-                            <span class="extension-title">智能媒体处理助手</span>
-                            <span class="extension-version">v${PLUGIN_VERSION}</span>
-                            <span class="collapse-indicator">▼</span>
-                        </summary>
-                        <div class="extension-content">
-                            <div class="setting-group">
-                                <h4>📋 运行模式</h4>
-                                <label>
-                                    <input type="checkbox" id="simpleMode" ${simpleModeChecked}> 启用简单上传模式
-                                </label>
-                                <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                                    <strong>默认模式</strong>：使用原有的Visual Bridge智能处理（推荐）<br>
-                                    <strong>简单模式</strong>：基础上传功能，无额外处理
-                                </div>
-                            </div>
-                            
-                            <div class="setting-group">
-                                <h4>📄 文档处理</h4>
-                                <div style="font-size: 13px; color: #333;">
-                                    ✅ 支持文本文件 (.txt, .md, .csv)<br>
-                                    ✅ 支持JSON文件 (.json)<br>
-                                    ⚠️ 支持Word文档 (.doc, .docx)<br>
-                                    ✅ 支持HTML/XML文件<br>
-                                    🤖 集成AI阅读分析功能
-                                </div>
-                            </div>
-                            
-                            <div class="setting-group">
-                                <h4>🎯 功能特性</h4>
-                                <div style="font-size: 13px; color: #333;">
-                                    🖼️ 智能图像处理和压缩<br>
-                                    📄 真实文档上传和解析<br>
-                                    🤖 AI内容分析（通过SillyTavern内置函数）<br>
-                                    💾 自动保存和路径管理<br>
-                                    🎨 美观的消息渲染<br>
-                                    📱 完美集成同层手机界面
-                                </div>
-                            </div>
-                        </div>
-                    </details>
-                </div>
-            `;
-      }
-
-      // 复制插件的折叠事件绑定函数
-      function bindCollapsibleEvents() {
-        const saveCollapsedState = isOpen => {
-          localStorage.setItem('third-party-image-processor-collapsed', !isOpen);
-        };
-
-        const loadCollapsedState = () => {
-          const collapsed = localStorage.getItem('third-party-image-processor-collapsed');
-          return collapsed === 'true';
-        };
-
-        const details = $('.extension-collapsible')[0];
-        if (details && loadCollapsedState()) {
-          details.removeAttribute('open');
-        }
-
-        $('.extension-collapsible').on('toggle', function () {
-          const isOpen = this.hasAttribute('open');
-          saveCollapsedState(isOpen);
-
-          const indicator = $(this).find('.collapse-indicator');
-          if (isOpen) {
-            indicator.css('transform', 'rotate(180deg)');
-          } else {
-            indicator.css('transform', 'rotate(0deg)');
+            default:
+              resolve(content);
           }
+        } catch (error) {
+          reject(error);
+        }
+      };
 
-          updateTestResults(`折叠状态变化: ${isOpen ? '展开' : '收起'}`);
-        });
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsText(file, 'UTF-8');
+    });
 
-        $('.extension-header')
-          .on('mousedown', function () {
-            $(this).css('transform', 'translateY(0px)');
-          })
-          .on('mouseup mouseleave', function () {
-            $(this).css('transform', 'translateY(-1px)');
-          });
+    // 获取上下文信息 - 使用与图片处理相同的方式
+    const ctx = getContext();
+    const currentCharacterId = ctx.characterId;
+    const characters = ctx.characters;
+    const character = characters[currentCharacterId];
+    const characterName = character ? character.name : 'unknown';
+
+    // 生成文件名 - 使用与图片处理相同的方式
+    const fileNamePrefix = `${Date.now()}_${getStringHash(file.name)}`;
+    const extension = file.name.split('.').pop() || 'txt';
+
+    // 保存文档到本地（类似图片处理）
+    let documentUrl = null;
+    if (options.saveToLocal !== false) {
+      const base64Content = btoa(unescape(encodeURIComponent(content)));
+      documentUrl = await saveBase64AsFile(base64Content, `${characterName}/documents`, fileNamePrefix, extension);
+    }
+
+    // 如果启用AI分析并且需要发送到聊天
+    if (pluginConfig.enableAIReading && options.enableAIReading !== false && options.sendToChat !== false) {
+      try {
+        // 构建AI提示
+        const aiPrompt = options.aiPrompt || `请分析这个文档的内容：${file.name}`;
+
+        // 调用SillyTavern的generate函数
+        const generateFn =
+          typeof window.generate === 'function'
+            ? window.generate
+            : window.parent && typeof window.parent.generate === 'function'
+            ? window.parent.generate
+            : top && typeof top.generate === 'function'
+            ? top.generate
+            : null;
+
+        if (generateFn) {
+          // 构建消息内容
+          const message = `${aiPrompt}\n\n文档内容：\n${content}`;
+
+          // 发送到聊天让AI分析
+          await generateFn(message);
+
+          console.log('[Document Processor] 文档已发送到聊天进行AI分析');
+        } else {
+          console.warn('[Document Processor] 无法找到generate函数');
+        }
+      } catch (aiError) {
+        console.warn('[Document Processor] AI分析失败:', aiError);
       }
-    </script>
-  </body>
-</html>
+    } else if (options.sendToChat !== false && options.sendRawContent) {
+      // 如果只需要发送原始内容
+      try {
+        const generateFn =
+          typeof window.generate === 'function'
+            ? window.generate
+            : window.parent && typeof window.parent.generate === 'function'
+            ? window.parent.generate
+            : top && typeof top.generate === 'function'
+            ? top.generate
+            : null;
+
+        if (generateFn) {
+          const message = `我上传了一个文档：${file.name}\n\n内容：\n${content}`;
+          await generateFn(message);
+        }
+      } catch (error) {
+        console.warn('[Document Processor] 发送原始内容失败:', error);
+      }
+    }
+
+    // 显示成功提示
+    if (typeof toastr !== 'undefined') {
+      toastr.success(`文档 "${file.name}" 处理完成`, '文档上传');
+    }
+
+    return {
+      success: true,
+      url: documentUrl,
+      content: content,
+      metadata: {
+        originalName: file.name,
+        type: file.type,
+        size: file.size,
+        contentLength: content.length,
+        character: characterName,
+        timestamp: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    console.error('文档处理失败:', error);
+    // 显示错误提示
+    if (typeof toastr !== 'undefined') {
+      toastr.error(`文档处理失败: ${error.message}`, '文档上传');
+    }
+    throw error;
+  }
+};
+
+/**
+ * 外部接口 - 通用文件处理入口（自动识别文件类型）
+ */
+window.__processFileByPlugin = async function (file, options = {}) {
+  try {
+    if (!file) {
+      throw new Error('请提供文件');
+    }
+
+    console.log('[File Processor] 文件信息:', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+    console.log('[File Processor] 支持的文档格式:', pluginConfig.documentFormats);
+
+    // 自动识别文件类型
+    if (file.type.startsWith('image/')) {
+      console.log('[File Processor] 识别为图片文件');
+      return await window.__uploadImageByPlugin(file, options);
+    } else if (pluginConfig.documentFormats && pluginConfig.documentFormats.includes(file.type)) {
+      console.log('[File Processor] 识别为文档文件');
+      return await window.__processDocumentByPlugin(file, options);
+    } else {
+      // 如果没有MIME类型，尝试根据文件扩展名判断
+      const fileName = file.name.toLowerCase();
+      if (fileName.endsWith('.txt')) {
+        console.log('[File Processor] 根据扩展名识别为文本文件');
+        // 创建一个带有正确MIME类型的新文件对象
+        const correctedFile = new File([file], file.name, { type: 'text/plain' });
+        return await window.__processDocumentByPlugin(correctedFile, options);
+      } else if (fileName.endsWith('.json')) {
+        console.log('[File Processor] 根据扩展名识别为JSON文件');
+        const correctedFile = new File([file], file.name, { type: 'application/json' });
+        return await window.__processDocumentByPlugin(correctedFile, options);
+      } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
+        console.log('[File Processor] 根据扩展名识别为Markdown文件');
+        const correctedFile = new File([file], file.name, { type: 'text/markdown' });
+        return await window.__processDocumentByPlugin(correctedFile, options);
+      } else if (fileName.endsWith('.csv')) {
+        console.log('[File Processor] 根据扩展名识别为CSV文件');
+        const correctedFile = new File([file], file.name, { type: 'text/csv' });
+        return await window.__processDocumentByPlugin(correctedFile, options);
+      } else if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
+        console.log('[File Processor] 根据扩展名识别为HTML文件');
+        const correctedFile = new File([file], file.name, { type: 'text/html' });
+        return await window.__processDocumentByPlugin(correctedFile, options);
+      } else if (fileName.endsWith('.xml')) {
+        console.log('[File Processor] 根据扩展名识别为XML文件');
+        const correctedFile = new File([file], file.name, { type: 'text/xml' });
+        return await window.__processDocumentByPlugin(correctedFile, options);
+      } else {
+        throw new Error(`不支持的文件类型: ${file.type || '未知'} (文件名: ${file.name})`);
+      }
+    }
+  } catch (error) {
+    console.error('[File Processor] 处理失败:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * 外部接口 - 获取SillyTavern AI生成函数
+ */
+window.__getSillyTavernAI = function () {
+  const AI_GENERATE =
+    typeof generate === 'function'
+      ? generate
+      : window.parent && window.parent.generate
+      ? window.parent.generate
+      : top && top.generate
+      ? top.generate
+      : null;
+
+  return {
+    generate: AI_GENERATE,
+    available: !!AI_GENERATE,
+    callAI: callSillyTavernAI,
+  };
+};
+
+/**
+ * 外部接口 - 直接调用SillyTavern AI
+ */
+window.__callSillyTavernAI = callSillyTavernAI;
+
+/**
+ * 外部接口 - 获取支持的文件类型
+ */
+window.__getSupportedFileTypes = function () {
+  return {
+    images: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'],
+    documents: pluginConfig.documentFormats || [
+      'text/plain',
+      'text/markdown',
+      'text/csv',
+      'text/html',
+      'text/xml',
+      'application/xml',
+      'application/json',
+      'application/rtf',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ],
+    all: function () {
+      return [...this.images, ...this.documents];
+    },
+  };
+};
+
+/**
+ * 外部接口 - 检查文件类型是否支持
+ */
+window.__isFileTypeSupported = function (fileType) {
+  const supportedTypes = window.__getSupportedFileTypes();
+  return supportedTypes.all().includes(fileType);
+};
+
+/**
+ * 加载设置
+ */
+function loadSettings() {
+  extensionSettings = getContext().extensionSettings[MODULE_NAME] || {};
+  Object.assign(extensionSettings, CONFIG_DEFAULTS, extensionSettings);
+
+  // 初始化图像处理器
+  imageProcessor = new ImageOptimizer();
+
+  console.log(`[${MODULE_NAME}] 设置已加载`, extensionSettings);
+}
+
+/**
+ * 保存设置
+ */
+function saveSettings() {
+  getContext().extensionSettings[MODULE_NAME] = extensionSettings;
+  saveSettingsDebounced();
+
+  // 重新初始化图像处理器
+  if (imageProcessor) {
+    imageProcessor = new ImageOptimizer();
+  }
+
+  console.log(`[${MODULE_NAME}] 设置已保存`);
+}
+
+/**
+ * 配置管理器
+ */
+class ConfigManager {
+  static async loadConfig() {
+    try {
+      if (Object.keys(pluginConfig).length === 0) {
+        Object.assign(pluginConfig, CONFIG_DEFAULTS);
+      }
+
+      this.updateInterface();
+      console.log('[Visual Bridge] 配置加载完成');
+    } catch (error) {
+      console.error('[Visual Bridge] 配置加载失败:', error);
+    }
+  }
+
+  static updateInterface() {
+    $('#vb-enabled')?.prop('checked', pluginConfig.active);
+    $('#vb-optimization-mode')?.val(pluginConfig.optimizationMode);
+    $('#vb-quality')?.val(pluginConfig.qualityLevel);
+
+    // 更新新增的设置项
+    $('#simpleMode')?.prop('checked', pluginConfig.simpleMode);
+    $('#processingMode')?.val(pluginConfig.processingMode);
+    $('#maxWidth')?.val(pluginConfig.maxWidth);
+    $('#maxHeight')?.val(pluginConfig.maxHeight);
+    $('#quality')?.val(pluginConfig.quality);
+    $('#qualityValue')?.text(Math.round(pluginConfig.quality * 100) + '%');
+    $('#compressionMode')?.val(pluginConfig.compressionMode);
+    $('#maxFileSize')?.val(pluginConfig.maxFileSize / 1024 / 1024);
+    $('#enableWebP')?.prop('checked', pluginConfig.enableWebP);
+    $('#autoOptimize')?.prop('checked', pluginConfig.autoOptimize);
+    $('#showProcessingInfo')?.prop('checked', pluginConfig.showProcessingInfo);
+    $('#enableLogging')?.prop('checked', pluginConfig.enableLogging);
+  }
+
+  static saveConfig() {
+    saveSettingsDebounced();
+    console.log('[Visual Bridge] 配置已保存');
+  }
+}
+
+/**
+ * 事件处理
+ */
+const EventManager = {
+  onToggleActive(event) {
+    pluginConfig.active = Boolean($(event.target).prop('checked'));
+    ConfigManager.saveConfig();
+
+    const status = pluginConfig.active ? '已启用' : '已禁用';
+    toastr.info(`Visual Bridge ${status}`, 'kencuo插件');
+  },
+
+  onModeChange(event) {
+    pluginConfig.optimizationMode = $(event.target).val();
+    ConfigManager.saveConfig();
+  },
+
+  onQualityChange(event) {
+    pluginConfig.qualityLevel = parseInt($(event.target).val());
+    ConfigManager.saveConfig();
+  },
+};
+
+/**
+ * 添加折叠样式
+ */
+function addCollapsibleStyles() {
+  const styleId = 'third-party-image-processor-collapsible-styles';
+  if (document.getElementById(styleId)) return; // 避免重复添加
+
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = `
+    /* ctrl的插件（bug大杂烩) */
+    .third-party-image-processor-settings {
+      margin-bottom: 20px;
+    }
+
+    .extension-collapsible {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      overflow: hidden;
+      background: #f9f9f9;
+      box-shadow: none;
+    }
+
+    .extension-header {
+      background: #e9ecef;
+      color: #495057;
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: normal;
+      font-size: 14px;
+      transition: background-color 0.2s ease;
+      user-select: none;
+      list-style: none;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    .extension-header:hover {
+      background: #dee2e6;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .extension-header::-webkit-details-marker {
+      display: none;
+    }
+
+    .extension-icon {
+      font-size: 14px;
+    }
+
+    .extension-title {
+      flex: 1;
+      font-weight: 600;
+    }
+
+    .extension-version {
+      background: #6c757d;
+      color: white;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: normal;
+    }
+
+    .collapse-indicator {
+      font-size: 10px;
+      transition: transform 0.2s ease;
+      color: #6c757d;
+    }
+
+    .extension-collapsible[open] .collapse-indicator {
+      transform: rotate(180deg);
+    }
+
+    .extension-content {
+      padding: 15px;
+      background: #fff;
+      border-top: none;
+    }
+
+    .setting-group {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 3px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+
+    .setting-group h4 {
+      margin: 0 0 8px 0;
+      color: #495057;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 5px;
+    }
+
+    .setting-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #6c757d;
+    }
+
+    .setting-group input[type="checkbox"] {
+      margin-right: 6px;
+    }
+
+    .setting-group select,
+    .setting-group input[type="number"],
+    .setting-group input[type="range"] {
+      width: 100%;
+      padding: 4px 8px;
+      border: 1px solid #ced4da;
+      border-radius: 3px;
+      font-size: 12px;
+      background: white;
+    }
+
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+      .extension-header {
+        padding: 12px 15px;
+        font-size: 14px;
+      }
+
+      .extension-content {
+        padding: 15px;
+      }
+
+      .setting-group {
+        padding: 12px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+/**
+ * 创建设置界面
+ */
+function createSettingsHtml() {
+  const simpleModeChecked = pluginConfig.simpleMode ? 'checked' : '';
+  const smartModeSelected = pluginConfig.processingMode === 'smart' ? 'selected' : '';
+  const directModeSelected = pluginConfig.processingMode === 'direct' ? 'selected' : '';
+  const compressModeSelected = pluginConfig.processingMode === 'compress' ? 'selected' : '';
+  const adaptiveModeSelected = pluginConfig.compressionMode === 'adaptive' ? 'selected' : '';
+  const qualityModeSelected = pluginConfig.compressionMode === 'quality' ? 'selected' : '';
+  const sizeModeSelected = pluginConfig.compressionMode === 'size' ? 'selected' : '';
+  const maxFileSizeMB = Math.round(pluginConfig.maxFileSize / 1024 / 1024);
+  const qualityPercent = Math.round(pluginConfig.quality * 100);
+  const enableWebPChecked = pluginConfig.enableWebP ? 'checked' : '';
+  const autoOptimizeChecked = pluginConfig.autoOptimize ? 'checked' : '';
+  const showProcessingInfoChecked = pluginConfig.showProcessingInfo ? 'checked' : '';
+  const enableLoggingChecked = pluginConfig.enableLogging ? 'checked' : '';
+
+  return `
+    <div class="third-party-image-processor-settings">
+        <details class="extension-collapsible" open>
+            <summary class="extension-header">
+                <span class="extension-icon">🖼️</span>
+                <span class="extension-title">ctrl的插件（bug大杂烩）</span>
+                <span class="extension-version">v${PLUGIN_VERSION}</span>
+                <span class="collapse-indicator">▼</span>
+            </summary>
+            <div class="extension-content">
+                <div class="setting-group">
+                    <h4>📋 运行模式</h4>
+                    <label>
+                        <input type="checkbox" id="simpleMode" ${simpleModeChecked}> 启用简单上传模式
+                    </label>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        <strong>默认模式</strong>：使用原有的Visual Bridge智能处理（推荐）<br>
+                        <strong>简单模式</strong>：基础上传功能，无额外处理<br>
+                        注意：默认情况下使用原有的上传方式，无需更改设置
+                    </div>
+                </div>
+
+                <div class="setting-group" id="advancedSettings">
+                    <h4>🔧 处理模式</h4>
+                    <label>
+                        处理方式:
+                        <select id="processingMode">
+                            <option value="smart" ${smartModeSelected}>智能模式（默认原有方式）</option>
+                            <option value="direct" ${directModeSelected}>直接保存（无处理）</option>
+                            <option value="compress" ${compressModeSelected}>高级压缩处理</option>
+                        </select>
+                    </label>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        智能模式：使用原有的Visual Bridge处理方式（推荐）<br>
+                        直接保存：保持原始图像不变<br>
+                        高级压缩：使用新的压缩算法优化图像
+                    </div>
+                </div>
+
+                <div class="setting-group" id="compressionSettings">
+                    <h4>⚙️ 压缩设置</h4>
+                    <label>
+                        最大宽度: <input type="number" id="maxWidth" min="100" max="4096" value="${pluginConfig.maxWidth}">
+                    </label>
+                    <label>
+                        最大高度: <input type="number" id="maxHeight" min="100" max="4096" value="${pluginConfig.maxHeight}">
+                    </label>
+                    <label>
+                        图像质量: <input type="range" id="quality" min="0.1" max="1" step="0.05" value="${pluginConfig.quality}">
+                        <span id="qualityValue">${qualityPercent}%</span>
+                    </label>
+                    <label>
+                        压缩模式:
+                        <select id="compressionMode">
+                            <option value="adaptive" ${adaptiveModeSelected}>自适应</option>
+                            <option value="quality" ${qualityModeSelected}>保持质量</option>
+                            <option value="size" ${sizeModeSelected}>压缩优先</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="setting-group" id="fileSettings">
+                    <h4>📁 文件限制</h4>
+                    <label>
+                        最大文件大小 (MB): <input type="number" id="maxFileSize" min="1" max="100" value="${maxFileSizeMB}">
+                    </label>
+                </div>
+
+                <div class="setting-group" id="advancedOptions">
+                    <h4>🔬 高级选项</h4>
+                    <label>
+                        <input type="checkbox" id="enableWebP" ${enableWebPChecked}> 启用WebP格式
+                    </label>
+                    <label>
+                        <input type="checkbox" id="autoOptimize" ${autoOptimizeChecked}> 自动优化
+                    </label>
+                    <label>
+                        <input type="checkbox" id="showProcessingInfo" ${showProcessingInfoChecked}> 显示处理信息
+                    </label>
+                    <label>
+                        <input type="checkbox" id="enableLogging" ${enableLoggingChecked}> 启用调试日志
+                    </label>
+                </div>
+            </div>
+        </details>
+    </div>`;
+}
+
+/**
+ * 绑定设置事件
+ */
+function bindSettingsEvents() {
+  // 简单模式切换
+  $('#simpleMode').on('change', function () {
+    pluginConfig.simpleMode = this.checked;
+    ConfigManager.saveConfig();
+
+    // 根据模式显示/隐藏高级设置
+    const advancedSettings = $('#advancedSettings, #compressionSettings, #fileSettings, #advancedOptions');
+    if (this.checked) {
+      advancedSettings.hide();
+      toastr.info('已切换到简单上传模式', '模式切换');
+    } else {
+      advancedSettings.show();
+      toastr.info('已切换到完整图像处理模式', '模式切换');
+    }
+  });
+
+  // 初始化时根据简单模式显示/隐藏高级设置
+  const advancedSettings = $('#advancedSettings, #compressionSettings, #fileSettings, #advancedOptions');
+  if (pluginConfig.simpleMode) {
+    advancedSettings.hide();
+  } else {
+    advancedSettings.show();
+  }
+
+  // 处理模式切换
+  $('#processingMode').on('change', function () {
+    pluginConfig.processingMode = this.value;
+    ConfigManager.saveConfig();
+
+    // 根据模式显示/隐藏压缩设置
+    const compressionSettings = $('#compressionSettings');
+    if (this.value === 'direct' || this.value === 'smart') {
+      compressionSettings.hide();
+    } else {
+      compressionSettings.show();
+    }
+  });
+
+  // 初始化时根据当前模式显示/隐藏压缩设置
+  const compressionSettings = $('#compressionSettings');
+  if (pluginConfig.processingMode === 'direct' || pluginConfig.processingMode === 'smart') {
+    compressionSettings.hide();
+  } else {
+    compressionSettings.show();
+  }
+
+  $('#maxWidth, #maxHeight').on('input', function () {
+    pluginConfig[this.id] = parseInt(this.value);
+    ConfigManager.saveConfig();
+  });
+
+  $('#quality').on('input', function () {
+    pluginConfig.quality = parseFloat(this.value);
+    $('#qualityValue').text(Math.round(this.value * 100) + '%');
+    ConfigManager.saveConfig();
+  });
+
+  $('#compressionMode').on('change', function () {
+    pluginConfig.compressionMode = this.value;
+    ConfigManager.saveConfig();
+  });
+
+  $('#maxFileSize').on('input', function () {
+    pluginConfig.maxFileSize = parseInt(this.value) * 1024 * 1024;
+    ConfigManager.saveConfig();
+  });
+
+  $('#enableWebP, #autoOptimize, #showProcessingInfo, #enableLogging').on('change', function () {
+    pluginConfig[this.id] = this.checked;
+    ConfigManager.saveConfig();
+  });
+}
+
+/**
+ * 绑定折叠功能事件
+ */
+function bindCollapsibleEvents() {
+  // 保存折叠状态到localStorage
+  const saveCollapsedState = isOpen => {
+    localStorage.setItem('third-party-image-processor-collapsed', !isOpen);
+  };
+
+  // 加载折叠状态
+  const loadCollapsedState = () => {
+    const collapsed = localStorage.getItem('third-party-image-processor-collapsed');
+    return collapsed === 'true';
+  };
+
+  // 应用保存的折叠状态
+  const details = $('.extension-collapsible')[0];
+  if (details && loadCollapsedState()) {
+    details.removeAttribute('open');
+  }
+
+  // 监听折叠状态变化
+  $('.extension-collapsible').on('toggle', function () {
+    const isOpen = this.hasAttribute('open');
+    saveCollapsedState(isOpen);
+
+    // 添加动画效果
+    const indicator = $(this).find('.collapse-indicator');
+    if (isOpen) {
+      indicator.css('transform', 'rotate(180deg)');
+    } else {
+      indicator.css('transform', 'rotate(0deg)');
+    }
+  });
+
+  // 添加点击动画效果
+  $('.extension-header')
+    .on('mousedown', function () {
+      $(this).css('transform', 'translateY(0px)');
+    })
+    .on('mouseup mouseleave', function () {
+      $(this).css('transform', 'translateY(-1px)');
+    });
+
+  console.log('[Visual Bridge] 折叠功能已启用');
+}
+
+/**
+ * 插件启动
+ */
+jQuery(async () => {
+  try {
+    console.log(`[Visual Bridge] 启动中... v${PLUGIN_VERSION} by ${PLUGIN_AUTHOR}`);
+
+    // 加载设置
+    loadSettings();
+
+    // 添加折叠样式
+    addCollapsibleStyles();
+
+    // 创建设置界面
+    const settingsHtml = createSettingsHtml();
+    $('#extensions_settings').append(settingsHtml);
+
+    // 绑定事件
+    $('#vb-enabled').on('change', EventManager.onToggleActive);
+    $('#vb-optimization-mode').on('change', EventManager.onModeChange);
+    $('#vb-quality').on('input', EventManager.onQualityChange);
+
+    // 绑定新增的设置事件
+    bindSettingsEvents();
+
+    // 绑定折叠功能
+    bindCollapsibleEvents();
+
+    // 初始化
+    await ConfigManager.loadConfig();
+    await visualBridge.initialize();
+
+    // 注册事件监听器
+    eventSource.on(event_types.SETTINGS_LOADED, loadSettings);
+
+    console.log('[Visual Bridge] 启动完成!');
+    console.log('[Visual Bridge] GitHub: https://github.com/kencuo/chajian');
+
+    // 显示初始化成功消息
+    if (pluginConfig.showProcessingInfo) {
+      const modeText = pluginConfig.simpleMode ? '简单上传模式' : '完整图像处理模式';
+      toastr.success(`智能图像处理插件已启用 (${modeText})`, '插件加载');
+    }
+  } catch (error) {
+    console.error('[Visual Bridge] 启动失败:', error);
+  }
+});
