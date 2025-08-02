@@ -848,104 +848,247 @@ const EventManager = {
 };
 
 /**
+ * 添加折叠样式
+ */
+function addCollapsibleStyles() {
+  const styleId = 'third-party-image-processor-collapsible-styles';
+  if (document.getElementById(styleId)) return; // 避免重复添加
+
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = `
+    /* 智能媒体处理助手 - 折叠样式 */
+    .third-party-image-processor-settings {
+      margin-bottom: 20px;
+    }
+
+    .extension-collapsible {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .extension-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 15px 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: bold;
+      font-size: 16px;
+      transition: all 0.3s ease;
+      user-select: none;
+      list-style: none;
+    }
+
+    .extension-header:hover {
+      background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    .extension-header::-webkit-details-marker {
+      display: none;
+    }
+
+    .extension-icon {
+      font-size: 20px;
+    }
+
+    .extension-title {
+      flex: 1;
+    }
+
+    .extension-version {
+      background: rgba(255,255,255,0.2);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: normal;
+    }
+
+    .collapse-indicator {
+      font-size: 12px;
+      transition: transform 0.3s ease;
+    }
+
+    .extension-collapsible[open] .collapse-indicator {
+      transform: rotate(180deg);
+    }
+
+    .extension-content {
+      padding: 20px;
+      background: #fafafa;
+      border-top: 1px solid #eee;
+    }
+
+    .setting-group {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+
+    .setting-group h4 {
+      margin: 0 0 10px 0;
+      color: #333;
+      font-size: 14px;
+      font-weight: bold;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+    }
+
+    .setting-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #555;
+    }
+
+    .setting-group input[type="checkbox"] {
+      margin-right: 8px;
+    }
+
+    .setting-group select,
+    .setting-group input[type="number"],
+    .setting-group input[type="range"] {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+      .extension-header {
+        padding: 12px 15px;
+        font-size: 14px;
+      }
+
+      .extension-content {
+        padding: 15px;
+      }
+
+      .setting-group {
+        padding: 12px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+/**
  * 创建设置界面
  */
 function createSettingsHtml() {
+  const simpleModeChecked = pluginConfig.simpleMode ? 'checked' : '';
+  const smartModeSelected = pluginConfig.processingMode === 'smart' ? 'selected' : '';
+  const directModeSelected = pluginConfig.processingMode === 'direct' ? 'selected' : '';
+  const compressModeSelected = pluginConfig.processingMode === 'compress' ? 'selected' : '';
+  const adaptiveModeSelected = pluginConfig.compressionMode === 'adaptive' ? 'selected' : '';
+  const qualityModeSelected = pluginConfig.compressionMode === 'quality' ? 'selected' : '';
+  const sizeModeSelected = pluginConfig.compressionMode === 'size' ? 'selected' : '';
+  const maxFileSizeMB = Math.round(pluginConfig.maxFileSize / 1024 / 1024);
+  const qualityPercent = Math.round(pluginConfig.quality * 100);
+  const enableWebPChecked = pluginConfig.enableWebP ? 'checked' : '';
+  const autoOptimizeChecked = pluginConfig.autoOptimize ? 'checked' : '';
+  const showProcessingInfoChecked = pluginConfig.showProcessingInfo ? 'checked' : '';
+  const enableLoggingChecked = pluginConfig.enableLogging ? 'checked' : '';
+
   return `
     <div class="third-party-image-processor-settings">
-        <h3>🖼️ 智能图像处理设置</h3>
+        <details class="extension-collapsible" open>
+            <summary class="extension-header">
+                <span class="extension-icon">🖼️</span>
+                <span class="extension-title">智能媒体处理助手</span>
+                <span class="extension-version">v${PLUGIN_VERSION}</span>
+                <span class="collapse-indicator">▼</span>
+            </summary>
+            <div class="extension-content">
+                <div class="setting-group">
+                    <h4>📋 运行模式</h4>
+                    <label>
+                        <input type="checkbox" id="simpleMode" ${simpleModeChecked}> 启用简单上传模式
+                    </label>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        <strong>默认模式</strong>：使用原有的Visual Bridge智能处理（推荐）<br>
+                        <strong>简单模式</strong>：基础上传功能，无额外处理<br>
+                        注意：默认情况下使用原有的上传方式，无需更改设置
+                    </div>
+                </div>
 
-        <div class="setting-group">
-            <h4>运行模式</h4>
-            <label>
-                <input type="checkbox" id="simpleMode" ${pluginConfig.simpleMode ? 'checked' : ''}> 启用简单上传模式
-            </label>
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                <strong>默认模式</strong>：使用原有的Visual Bridge智能处理（推荐）<br>
-                <strong>简单模式</strong>：基础上传功能，无额外处理<br>
-                注意：默认情况下使用原有的上传方式，无需更改设置
+                <div class="setting-group" id="advancedSettings">
+                    <h4>🔧 处理模式</h4>
+                    <label>
+                        处理方式:
+                        <select id="processingMode">
+                            <option value="smart" ${smartModeSelected}>智能模式（默认原有方式）</option>
+                            <option value="direct" ${directModeSelected}>直接保存（无处理）</option>
+                            <option value="compress" ${compressModeSelected}>高级压缩处理</option>
+                        </select>
+                    </label>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        智能模式：使用原有的Visual Bridge处理方式（推荐）<br>
+                        直接保存：保持原始图像不变<br>
+                        高级压缩：使用新的压缩算法优化图像
+                    </div>
+                </div>
+
+                <div class="setting-group" id="compressionSettings">
+                    <h4>⚙️ 压缩设置</h4>
+                    <label>
+                        最大宽度: <input type="number" id="maxWidth" min="100" max="4096" value="${pluginConfig.maxWidth}">
+                    </label>
+                    <label>
+                        最大高度: <input type="number" id="maxHeight" min="100" max="4096" value="${pluginConfig.maxHeight}">
+                    </label>
+                    <label>
+                        图像质量: <input type="range" id="quality" min="0.1" max="1" step="0.05" value="${pluginConfig.quality}">
+                        <span id="qualityValue">${qualityPercent}%</span>
+                    </label>
+                    <label>
+                        压缩模式:
+                        <select id="compressionMode">
+                            <option value="adaptive" ${adaptiveModeSelected}>自适应</option>
+                            <option value="quality" ${qualityModeSelected}>保持质量</option>
+                            <option value="size" ${sizeModeSelected}>压缩优先</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="setting-group" id="fileSettings">
+                    <h4>📁 文件限制</h4>
+                    <label>
+                        最大文件大小 (MB): <input type="number" id="maxFileSize" min="1" max="100" value="${maxFileSizeMB}">
+                    </label>
+                </div>
+
+                <div class="setting-group" id="advancedOptions">
+                    <h4>🔬 高级选项</h4>
+                    <label>
+                        <input type="checkbox" id="enableWebP" ${enableWebPChecked}> 启用WebP格式
+                    </label>
+                    <label>
+                        <input type="checkbox" id="autoOptimize" ${autoOptimizeChecked}> 自动优化
+                    </label>
+                    <label>
+                        <input type="checkbox" id="showProcessingInfo" ${showProcessingInfoChecked}> 显示处理信息
+                    </label>
+                    <label>
+                        <input type="checkbox" id="enableLogging" ${enableLoggingChecked}> 启用调试日志
+                    </label>
+                </div>
             </div>
-        </div>
-
-        <div class="setting-group" id="advancedSettings">
-            <h4>处理模式</h4>
-            <label>
-                处理方式:
-                <select id="processingMode">
-                    <option value="smart" ${
-                      pluginConfig.processingMode === 'smart' ? 'selected' : ''
-                    }>智能模式（默认原有方式）</option>
-                    <option value="direct" ${
-                      pluginConfig.processingMode === 'direct' ? 'selected' : ''
-                    }>直接保存（无处理）</option>
-                    <option value="compress" ${
-                      pluginConfig.processingMode === 'compress' ? 'selected' : ''
-                    }>高级压缩处理</option>
-                </select>
-            </label>
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                智能模式：使用原有的Visual Bridge处理方式（推荐）<br>
-                直接保存：保持原始图像不变<br>
-                高级压缩：使用新的压缩算法优化图像
-            </div>
-        </div>
-
-        <div class="setting-group" id="compressionSettings">
-            <h4>压缩设置</h4>
-            <label>
-                最大宽度: <input type="number" id="maxWidth" min="100" max="4096" value="${pluginConfig.maxWidth}">
-            </label>
-            <label>
-                最大高度: <input type="number" id="maxHeight" min="100" max="4096" value="${pluginConfig.maxHeight}">
-            </label>
-            <label>
-                图像质量: <input type="range" id="quality" min="0.1" max="1" step="0.05" value="${
-                  pluginConfig.quality
-                }">
-                <span id="qualityValue">${Math.round(pluginConfig.quality * 100)}%</span>
-            </label>
-            <label>
-                压缩模式:
-                <select id="compressionMode">
-                    <option value="adaptive" ${
-                      pluginConfig.compressionMode === 'adaptive' ? 'selected' : ''
-                    }>自适应</option>
-                    <option value="quality" ${
-                      pluginConfig.compressionMode === 'quality' ? 'selected' : ''
-                    }>保持质量</option>
-                    <option value="size" ${pluginConfig.compressionMode === 'size' ? 'selected' : ''}>压缩优先</option>
-                </select>
-            </label>
-        </div>
-
-        <div class="setting-group" id="fileSettings">
-            <h4>文件限制</h4>
-            <label>
-                最大文件大小 (MB): <input type="number" id="maxFileSize" min="1" max="100" value="${
-                  pluginConfig.maxFileSize / 1024 / 1024
-                }">
-            </label>
-        </div>
-
-        <div class="setting-group" id="advancedOptions">
-            <h4>高级选项</h4>
-            <label>
-                <input type="checkbox" id="enableWebP" ${pluginConfig.enableWebP ? 'checked' : ''}> 启用WebP格式
-            </label>
-            <label>
-                <input type="checkbox" id="autoOptimize" ${pluginConfig.autoOptimize ? 'checked' : ''}> 自动优化
-            </label>
-            <label>
-                <input type="checkbox" id="showProcessingInfo" ${
-                  pluginConfig.showProcessingInfo ? 'checked' : ''
-                }> 显示处理信息
-            </label>
-            <label>
-                <input type="checkbox" id="enableLogging" ${pluginConfig.enableLogging ? 'checked' : ''}> 启用调试日志
-            </label>
-        </div>
-    </div>
-    `;
+        </details>
+    </div>`;
 }
 
 /**
@@ -1026,6 +1169,53 @@ function bindSettingsEvents() {
 }
 
 /**
+ * 绑定折叠功能事件
+ */
+function bindCollapsibleEvents() {
+  // 保存折叠状态到localStorage
+  const saveCollapsedState = isOpen => {
+    localStorage.setItem('third-party-image-processor-collapsed', !isOpen);
+  };
+
+  // 加载折叠状态
+  const loadCollapsedState = () => {
+    const collapsed = localStorage.getItem('third-party-image-processor-collapsed');
+    return collapsed === 'true';
+  };
+
+  // 应用保存的折叠状态
+  const details = $('.extension-collapsible')[0];
+  if (details && loadCollapsedState()) {
+    details.removeAttribute('open');
+  }
+
+  // 监听折叠状态变化
+  $('.extension-collapsible').on('toggle', function () {
+    const isOpen = this.hasAttribute('open');
+    saveCollapsedState(isOpen);
+
+    // 添加动画效果
+    const indicator = $(this).find('.collapse-indicator');
+    if (isOpen) {
+      indicator.css('transform', 'rotate(180deg)');
+    } else {
+      indicator.css('transform', 'rotate(0deg)');
+    }
+  });
+
+  // 添加点击动画效果
+  $('.extension-header')
+    .on('mousedown', function () {
+      $(this).css('transform', 'translateY(0px)');
+    })
+    .on('mouseup mouseleave', function () {
+      $(this).css('transform', 'translateY(-1px)');
+    });
+
+  console.log('[Visual Bridge] 折叠功能已启用');
+}
+
+/**
  * 插件启动
  */
 jQuery(async () => {
@@ -1034,6 +1224,9 @@ jQuery(async () => {
 
     // 加载设置
     loadSettings();
+
+    // 添加折叠样式
+    addCollapsibleStyles();
 
     // 创建设置界面
     const settingsHtml = createSettingsHtml();
@@ -1046,6 +1239,9 @@ jQuery(async () => {
 
     // 绑定新增的设置事件
     bindSettingsEvents();
+
+    // 绑定折叠功能
+    bindCollapsibleEvents();
 
     // 初始化
     await ConfigManager.loadConfig();
