@@ -9,6 +9,20 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { getContext } from '../../../extensions.js';
 import { getStringHash, saveBase64AsFile } from '../../../utils.js';
 
+// 添加缺少的工具函数
+function getBase64Async(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      resolve(e.target.result);
+    };
+    reader.onerror = function (error) {
+      reject(error);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // 插件配置
 const PLUGIN_ID = 'smart-media-assistant';
 const MODULE_NAME = 'smart-media-assistant';
@@ -871,7 +885,7 @@ function createSettingsHTML() {
         <summary class="smart-media-header">
           <span class="smart-media-icon">🎯</span>
           <span class="smart-media-title">智能媒体助手</span>
-          <span class="smart-media-version">v1.1.0</span>
+          <span class="smart-media-version">v1.0.0</span>
           <span class="smart-media-collapse-indicator">▼</span>
         </summary>
         <div class="smart-media-content">
