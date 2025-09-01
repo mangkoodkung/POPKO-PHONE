@@ -492,14 +492,15 @@ class VideoProcessor {
       // 生成唯一文件名
       const uniqueId = `${Date.now()}_${getStringHash(file.name)}`;
       const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'mp4';
-      const storagePath = 'user';
+      const name2 = `video_${uniqueId}`;
+      const fileNamePrefix = `video_${uniqueId}`;
 
       // 将视频文件转换为base64
       const base64Content = await getBase64Async(file);
-      const base64Data = base64Content.split(',')[1]; // 移除data:video/xxx;base64,前缀
+      // 注意：saveBase64AsFile需要完整的data URL，不要移除前缀
 
-      // 保存视频文件
-      const savedUrl = await saveBase64AsFile(base64Data, storagePath, uniqueId, fileExtension);
+      // 保存视频文件（使用与SillyTavern官方相同的调用方式）
+      const savedUrl = await saveBase64AsFile(base64Content, name2, fileNamePrefix, fileExtension);
 
       const result = {
         success: true,
