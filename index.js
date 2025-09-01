@@ -17,9 +17,11 @@ const MODULE_NAME = 'smart-media-assistant';
 const DEFAULT_CONFIG = {
   enableImageProcessing: true,
   enableDocumentProcessing: true,
+  enableVideoProcessing: true,
   imageQuality: 85,
   maxImageDimension: 2048,
   maxFileSize: 20,
+  maxVideoSize: 100, // 视频文件大小限制 (MB)
   enableAIReading: true,
   showProcessingInfo: false,
   enableLogging: false,
@@ -27,6 +29,8 @@ const DEFAULT_CONFIG = {
   // 内部配置
   supportedImageTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'],
   supportedImageExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'],
+  supportedVideoTypes: ['video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/mov', 'video/mkv'],
+  supportedVideoExtensions: ['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv'],
   supportedDocumentTypes: [
     'text/plain',
     'application/json',
@@ -86,7 +90,7 @@ function initConfig() {
 class FileTypeDetector {
   static detectFileType(file) {
     if (!file || !file.name) {
-      return { type: 'unknown', isImage: false, isDocument: false };
+      return { type: 'unknown', isImage: false, isDocument: false, isVideo: false };
     }
 
     const fileType = file.type || '';
@@ -97,6 +101,11 @@ class FileTypeDetector {
     const isImageByType = pluginConfig.supportedImageTypes.includes(fileType) || fileType.startsWith('image/');
     const isImageByExt = pluginConfig.supportedImageExtensions.includes(fileExtension);
     const isImage = isImageByType || (fileType.startsWith('image/') && isImageByExt);
+
+    // 检测视频
+    const isVideoByType = pluginConfig.supportedVideoTypes.includes(fileType) || fileType.startsWith('video/');
+    const isVideoByExt = pluginConfig.supportedVideoExtensions.includes(fileExtension);
+    const isVideo = isVideoByType || (fileType.startsWith('video/') && isVideoByExt);
 
     // 检测文档
     const isDocumentByType =
@@ -111,16 +120,23 @@ class FileTypeDetector {
     let finalType = 'unknown';
     let finalIsImage = false;
     let finalIsDocument = false;
+    let finalIsVideo = false;
 
-    if (isImage && !isDocument) {
+    if (isVideo && !isImage && !isDocument) {
+      finalType = 'video';
+      finalIsVideo = true;
+    } else if (isImage && !isDocument && !isVideo) {
       finalType = 'image';
       finalIsImage = true;
-    } else if (isDocument && !isImage) {
+    } else if (isDocument && !isImage && !isVideo) {
       finalType = 'document';
       finalIsDocument = true;
-    } else if (isImage && isDocument) {
+    } else if (isVideo || isImage || isDocument) {
       // 冲突解决：优先按扩展名
-      if (pluginConfig.supportedImageExtensions.includes(fileExtension)) {
+      if (pluginConfig.supportedVideoExtensions.includes(fileExtension)) {
+        finalType = 'video';
+        finalIsVideo = true;
+      } else if (pluginConfig.supportedImageExtensions.includes(fileExtension)) {
         finalType = 'image';
         finalIsImage = true;
       } else {
@@ -133,6 +149,7 @@ class FileTypeDetector {
       type: finalType,
       isImage: finalIsImage,
       isDocument: finalIsDocument,
+      isVideo: finalIsVideo,
       fileType: fileType,
       fileName: fileName,
       fileExtension: fileExtension,
@@ -156,15 +173,28 @@ class FileValidator {
       throw new Error('无效的文件对象');
     }
 
-    const maxBytes = pluginConfig.maxFileSize * 1024 * 1024;
-    if (file.size > maxBytes) {
-      throw new Error(`文件过大，限制: ${pluginConfig.maxFileSize}MB`);
-    }
-
     const detection = FileTypeDetector.detectFileType(file);
+
+    // 根据文件类型设置不同的大小限制
+    let maxBytes;
+    if (detection.isVideo) {
+      maxBytes = pluginConfig.maxVideoSize * 1024 * 1024;
+      if (file.size > maxBytes) {
+        throw new Error(`视频文件过大，限制: ${pluginConfig.maxVideoSize}MB`);
+      }
+    } else {
+      maxBytes = pluginConfig.maxFileSize * 1024 * 1024;
+      if (file.size > maxBytes) {
+        throw new Error(`文件过大，限制: ${pluginConfig.maxFileSize}MB`);
+      }
+    }
 
     if (expectedType === 'image' && !detection.isImage) {
       throw new Error(`不支持的图片格式: ${detection.fileType || '未知'} (${file.name})`);
+    }
+
+    if (expectedType === 'video' && !detection.isVideo) {
+      throw new Error(`不支持的视频格式: ${detection.fileType || '未知'} (${file.name})`);
     }
 
     if (expectedType === 'document' && !detection.isDocument) {
@@ -428,6 +458,164 @@ class DocumentProcessor {
 }
 
 /**
+ * 视频处理器
+ */
+class VideoProcessor {
+  static async processVideo(file, options = {}) {
+    if (!pluginConfig.enableVideoProcessing) {
+      throw new Error('视频处理功能已禁用');
+    }
+
+    const validation = FileValidator.validate(file, 'video');
+
+    if (pluginConfig.showProcessingInfo) {
+      toastr.info('正在处理视频...', '视频上传');
+    }
+
+    try {
+      // 生成唯一文件名
+      const uniqueId = `${Date.now()}_${getStringHash(file.name)}`;
+      const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'mp4';
+      const storagePath = 'user/videos';
+
+      // 将视频文件转换为base64
+      const base64Content = await getBase64Async(file);
+      const base64Data = base64Content.split(',')[1]; // 移除data:video/xxx;base64,前缀
+
+      // 保存视频文件
+      const savedUrl = await saveBase64AsFile(base64Data, storagePath, uniqueId, fileExtension);
+
+      const result = {
+        success: true,
+        url: savedUrl,
+        metadata: {
+          originalName: file.name,
+          originalSize: file.size,
+          processedSize: file.size, // 视频不压缩，保持原始大小
+          fileType: validation.fileType,
+          fileExtension: fileExtension,
+          processingMode: 'direct',
+          uploadTime: new Date().toISOString(),
+        },
+      };
+
+      // AI视频分析（如果启用）
+      if (options.enableAIVision && pluginConfig.enableAIReading) {
+        try {
+          result.aiDescription = await VideoProcessor.analyzeVideoWithAI(savedUrl, options.aiPrompt);
+        } catch (error) {
+          console.warn('[Video Processor] AI分析失败:', error);
+          result.aiDescription = null;
+        }
+      }
+
+      if (pluginConfig.showProcessingInfo) {
+        toastr.success('视频处理完成', '视频上传');
+      }
+
+      return result;
+    } catch (error) {
+      if (pluginConfig.showProcessingInfo) {
+        toastr.error(`视频处理失败: ${error.message}`, '视频上传');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 使用AI分析视频内容
+   */
+  static async analyzeVideoWithAI(videoUrl, customPrompt = null) {
+    try {
+      const prompt = customPrompt || '请分析这个视频的内容，描述你看到的场景、动作、物体和任何重要的视觉信息。';
+
+      // 获取SillyTavern的AI生成函数
+      const AI_GENERATE =
+        typeof generate === 'function'
+          ? generate
+          : window.parent && window.parent.generate
+          ? window.parent.generate
+          : top && top.generate
+          ? top.generate
+          : null;
+
+      if (!AI_GENERATE) {
+        throw new Error('无法访问SillyTavern AI生成函数');
+      }
+
+      // 构建视频分析请求
+      const response = await AI_GENERATE({
+        injects: [
+          {
+            role: 'system',
+            content: prompt,
+            position: 'in_chat',
+            depth: 0,
+            should_scan: true,
+          },
+        ],
+        should_stream: false,
+        video: videoUrl, // 传递视频URL
+      });
+
+      return response || '视频分析完成，但未获得描述';
+    } catch (error) {
+      console.error('[Video Processor] AI分析失败:', error);
+      throw new Error(`视频AI分析失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 发送视频到聊天
+   */
+  static async sendVideoToChat(videoUrl, fileName, description = null) {
+    try {
+      // 获取SillyTavern的聊天函数
+      const addOneMessage =
+        typeof window.addOneMessage === 'function'
+          ? window.addOneMessage
+          : typeof parent.addOneMessage === 'function'
+          ? parent.addOneMessage
+          : typeof top.addOneMessage === 'function'
+          ? top.addOneMessage
+          : null;
+
+      if (!addOneMessage) {
+        console.warn('[Video Processor] 无法找到addOneMessage函数');
+        return;
+      }
+
+      // 构建消息内容
+      let messageContent = `📹 视频文件: ${fileName}`;
+      if (description) {
+        messageContent += `\n\n🤖 AI分析: ${description}`;
+      }
+
+      // 发送消息到聊天
+      await addOneMessage({
+        name: 'System',
+        is_system: true,
+        is_user: false,
+        send_date: new Date().toISOString(),
+        mes: messageContent,
+        extra: {
+          type: 'video_upload',
+          video: videoUrl,
+          file_name: fileName,
+          processed_by: 'smart_media_assistant',
+        },
+      });
+
+      if (pluginConfig.enableLogging) {
+        console.log('[Video Processor] 视频已发送到聊天');
+      }
+    } catch (error) {
+      console.error('[Video Processor] 发送视频失败:', error);
+    }
+  }
+}
+
+/**
  * 主要的文件处理接口
  */
 class FileProcessor {
@@ -454,6 +642,11 @@ class FileProcessor {
           console.log('[File Processor] 使用图片处理器');
         }
         return await ImageProcessor.processImage(file);
+      } else if (detection.isVideo) {
+        if (pluginConfig.enableLogging) {
+          console.log('[File Processor] 使用视频处理器');
+        }
+        return await VideoProcessor.processVideo(file, options);
       } else if (detection.isDocument) {
         if (pluginConfig.enableLogging) {
           console.log('[File Processor] 使用文档处理器');
@@ -493,6 +686,30 @@ window.__processDocumentByPlugin = async function (file, options = {}) {
 };
 
 /**
+ * 视频处理接口
+ */
+window.__processVideoByPlugin = async function (file, options = {}) {
+  return await VideoProcessor.processVideo(file, options);
+};
+
+/**
+ * 视频分析接口
+ */
+window.__analyzeVideoByPlugin = async function (file, customPrompt = null) {
+  const validation = FileValidator.validate(file, 'video');
+
+  // 先处理视频文件
+  const result = await VideoProcessor.processVideo(file, { enableAIVision: true, aiPrompt: customPrompt });
+
+  return {
+    success: true,
+    videoUrl: result.url,
+    analysis: result.aiDescription,
+    metadata: result.metadata,
+  };
+};
+
+/**
  * 文件类型检测接口
  */
 window.__isDocumentFile = function (file) {
@@ -501,16 +718,26 @@ window.__isDocumentFile = function (file) {
 };
 
 /**
+ * 视频文件检测接口
+ */
+window.__isVideoFile = function (file) {
+  const detection = FileTypeDetector.detectFileType(file);
+  return detection.isVideo;
+};
+
+/**
  * 获取支持的文件类型
  */
 window.__getSupportedFileTypes = function () {
   return {
     images: pluginConfig.supportedImageTypes,
+    videos: pluginConfig.supportedVideoTypes,
     documents: pluginConfig.supportedDocumentTypes,
     imageExtensions: pluginConfig.supportedImageExtensions,
+    videoExtensions: pluginConfig.supportedVideoExtensions,
     documentExtensions: pluginConfig.supportedDocumentExtensions,
     all: function () {
-      return [...this.images, ...this.documents];
+      return [...this.images, ...this.videos, ...this.documents];
     },
   };
 };
@@ -644,7 +871,7 @@ function createSettingsHTML() {
         <summary class="smart-media-header">
           <span class="smart-media-icon">🎯</span>
           <span class="smart-media-title">智能媒体助手</span>
-          <span class="smart-media-version">v1.0.0</span>
+          <span class="smart-media-version">v1.1.0</span>
           <span class="smart-media-collapse-indicator">▼</span>
         </summary>
         <div class="smart-media-content">
