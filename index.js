@@ -67,6 +67,22 @@ const DEFAULT_CONFIG = {
 let pluginConfig = {};
 
 /**
+ * 将文件转换为base64的异步函数
+ */
+function getBase64Async(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      resolve(e.target.result);
+    };
+    reader.onerror = function (error) {
+      reject(error);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * 初始化插件配置
  */
 function initConfig() {
@@ -476,7 +492,7 @@ class VideoProcessor {
       // 生成唯一文件名
       const uniqueId = `${Date.now()}_${getStringHash(file.name)}`;
       const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'mp4';
-      const storagePath = 'user/videos';
+      const storagePath = 'user';
 
       // 将视频文件转换为base64
       const base64Content = await getBase64Async(file);
@@ -892,6 +908,14 @@ function createSettingsHTML() {
               启用文档处理
             </label>
             <div class="setting-description">开启txt、json等文档文件的处理功能</div>
+
+            <label>
+              <input type="checkbox" id="${MODULE_NAME}_enableVideoProcessing" ${
+    pluginConfig.enableVideoProcessing ? 'checked' : ''
+  }>
+              启用视频处理
+            </label>
+            <div class="setting-description">开启视频文件的上传和AI识别功能</div>
           </div>
 
           <div class="setting-group">
@@ -929,7 +953,18 @@ function createSettingsHTML() {
     pluginConfig.maxFileSize
   }">
             </label>
-            <div class="setting-description">允许处理的最大文件大小</div>
+            <div class="setting-description">允许处理的最大文档文件大小</div>
+          </div>
+
+          <div class="setting-group">
+            <h4>🎬 视频设置</h4>
+            <label>
+              视频大小限制: <span id="${MODULE_NAME}_maxVideoSizeValue">${pluginConfig.maxVideoSize}</span>MB
+              <input type="range" id="${MODULE_NAME}_maxVideoSize" min="10" max="200" step="10" value="${
+    pluginConfig.maxVideoSize
+  }">
+            </label>
+            <div class="setting-description">允许处理的最大视频文件大小</div>
           </div>
 
           <div class="setting-group">
@@ -1021,6 +1056,18 @@ function bindEventListeners() {
 
   $(document).on('change', `#${MODULE_NAME}_enableDocumentProcessing`, function () {
     pluginConfig.enableDocumentProcessing = $(this).prop('checked');
+    saveSettings();
+  });
+
+  $(document).on('change', `#${MODULE_NAME}_enableVideoProcessing`, function () {
+    pluginConfig.enableVideoProcessing = $(this).prop('checked');
+    saveSettings();
+  });
+
+  $(document).on('input', `#${MODULE_NAME}_maxVideoSize`, function () {
+    const value = parseInt($(this).val());
+    pluginConfig.maxVideoSize = value;
+    $(`#${MODULE_NAME}_maxVideoSizeValue`).text(value);
     saveSettings();
   });
 
