@@ -687,8 +687,8 @@ function createSettingsHTML() {
       <details class="smart-media-collapsible" open>
         <summary class="smart-media-header">
           <span class="smart-media-icon">🎯</span>
-          <span class="smart-media-title">智能媒体助手</span>
-          <span class="smart-media-version">v1.0.0</span>
+          <span class="smart-media-title">ctrl同层手机喵识图</span>
+          <span class="smart-media-version">v1.1.0</span>
           <span class="smart-media-collapse-indicator">▼</span>
         </summary>
         <div class="smart-media-content">
