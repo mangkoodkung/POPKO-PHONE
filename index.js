@@ -1,5 +1,6 @@
 /**
  * 智能媒体助手 - SillyTavern Extension
+ * 统一的图片和文档处理插件
  * 作者: kencuo
  * 版本: 1.0.0
  */
@@ -11,15 +12,6 @@ import { getStringHash, saveBase64AsFile } from '../../../utils.js';
 // 插件配置
 const PLUGIN_ID = 'smart-media-assistant';
 const MODULE_NAME = 'smart-media-assistant';
-
-// GitHub仓库信息
-const GITHUB_REPO = 'your-username/smart-media-assistant'; // 替换为你的GitHub仓库
-const GITHUB_MANIFEST_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/manifest.json`;
-
-// 版本信息
-let localVersion = '';
-let remoteVersion = '';
-let hasUpdate = false;
 
 // 默认配置
 const DEFAULT_CONFIG = {
@@ -567,149 +559,6 @@ window.__getSupportedFileTypes = function () {
   };
 };
 
-// ==================== 版本管理功能 ====================
-
-// 读取本地manifest.json获取当前版本
-async function loadLocalVersion() {
-  try {
-    const response = await fetch(`/scripts/extensions/third-party/${MODULE_NAME}/manifest.json`);
-    if (response.ok) {
-      const manifest = await response.json();
-      localVersion = manifest.version || '';
-      if (localVersion) {
-        console.log(`[Smart Media Assistant] 本地版本: ${localVersion}`);
-        updateVersionDisplay();
-      }
-    }
-  } catch (error) {
-    console.error('[Smart Media Assistant] 无法读取本地manifest.json:', error);
-    localVersion = '';
-  }
-}
-
-// 获取GitHub远程版本
-async function loadRemoteVersion() {
-  try {
-    const response = await fetch(GITHUB_MANIFEST_URL);
-    if (response.ok) {
-      const manifest = await response.json();
-      remoteVersion = manifest.version || '未知';
-      console.log(`[Smart Media Assistant] 远程版本: ${remoteVersion}`);
-      checkForUpdates();
-    }
-  } catch (error) {
-    console.error('[Smart Media Assistant] 无法获取远程版本信息:', error);
-    remoteVersion = '获取失败';
-  }
-}
-
-// 比较版本
-function checkForUpdates() {
-  if (localVersion && remoteVersion) {
-    hasUpdate = localVersion !== remoteVersion;
-    console.log(
-      `[Smart Media Assistant] 版本对比: 本地${localVersion} vs 远程${remoteVersion} => ${
-        hasUpdate ? '有更新' : '无更新'
-      }`,
-    );
-  }
-  updateVersionDisplay();
-}
-
-// 更新版本显示
-function updateVersionDisplay() {
-  const currentVersionElement = $('#smart-media-current-version');
-  const updateBadgeElement = $('#smart-media-update-badge');
-  const updateButton = $('#smart-media-update-button');
-
-  // 显示当前版本
-  if (currentVersionElement.length > 0 && localVersion) {
-    currentVersionElement.text(`v${localVersion}`);
-  }
-
-  // 显示更新徽章和按钮状态
-  if (hasUpdate) {
-    updateBadgeElement.show();
-    updateBadgeElement.attr('title', `远程版本: v${remoteVersion}`);
-
-    if (updateButton.length > 0) {
-      updateButton.text(`更新到 v${remoteVersion}`);
-      updateButton.css({
-        'background-color': '#ff6b6b',
-        color: 'white',
-        'font-weight': 'bold',
-      });
-      updateButton.attr('title', `发现新版本 v${remoteVersion}，点击更新`);
-    }
-  } else {
-    updateBadgeElement.hide();
-
-    if (updateButton.length > 0) {
-      updateButton.text('检查更新');
-      updateButton.css({
-        'background-color': '',
-        color: '',
-        'font-weight': '',
-      });
-      updateButton.attr('title', '检查是否有新版本');
-    }
-  }
-}
-
-// 更新按钮点击处理
-async function onUpdateButtonClick() {
-  const button = $('#smart-media-update-button');
-  const originalText = button.text();
-
-  button.prop('disabled', true);
-  button.html('<i class="fa-solid fa-spinner fa-spin"></i> 处理中...');
-
-  try {
-    if (hasUpdate) {
-      // 执行更新
-      toastr.info('正在更新插件...', '智能媒体助手');
-
-      // 这里需要调用SillyTavern的扩展更新API
-      const response = await fetch('/api/extensions/update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          extensionName: MODULE_NAME,
-          global: false,
-        }),
-      });
-
-      if (response.ok) {
-        toastr.success('更新成功！2秒后自动刷新页面', '智能媒体助手');
-        setTimeout(() => {
-          location.reload();
-        }, 2000);
-        return;
-      } else {
-        throw new Error('更新请求失败');
-      }
-    } else {
-      // 重新检查版本
-      toastr.info('正在检查最新版本...', '智能媒体助手');
-      await loadRemoteVersion();
-
-      if (!hasUpdate) {
-        toastr.success('已是最新版本！', '智能媒体助手');
-      } else {
-        toastr.info('发现新版本，请再次点击更新按钮进行更新', '智能媒体助手');
-      }
-    }
-  } catch (error) {
-    console.error('[Smart Media Assistant] 更新失败:', error);
-    toastr.error('更新失败: ' + error.message, '智能媒体助手');
-  } finally {
-    button.prop('disabled', false);
-    button.text(originalText);
-  }
-}
-
 // ==================== 插件生命周期 ====================
 
 /**
@@ -732,14 +581,6 @@ function initPlugin() {
 
   // 绑定收缩栏功能
   bindCollapsibleEvents();
-
-  // 加载版本信息
-  loadLocalVersion();
-
-  // 异步检查远程版本（不阻塞界面加载）
-  setTimeout(async () => {
-    await loadRemoteVersion();
-  }, 1000);
 
   console.log('[Smart Media Assistant] 插件初始化完成');
 
@@ -846,9 +687,8 @@ function createSettingsHTML() {
       <details class="smart-media-collapsible" open>
         <summary class="smart-media-header">
           <span class="smart-media-icon">🎯</span>
-          <span class="smart-media-title">ctrl同层手机喵识图</span>
-          <span class="smart-media-version" id="smart-media-current-version">v1.1.0</span>
-          <span class="smart-media-update-badge" id="smart-media-update-badge" style="display: none; background: #ff6b6b; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 5px;" title="有新版本可用">NEW</span>
+          <span class="smart-media-title">智能媒体助手</span>
+          <span class="smart-media-version">v1.0.0</span>
           <span class="smart-media-collapse-indicator">▼</span>
         </summary>
         <div class="smart-media-content">
@@ -924,17 +764,6 @@ function createSettingsHTML() {
               启用调试日志
             </label>
             <div class="setting-description">在控制台输出详细的调试信息</div>
-          </div>
-
-          <div class="setting-group">
-            <h4>🔄 版本管理</h4>
-            <div style="display: flex; align-items: center; gap: 10px; margin: 10px 0;">
-              <span>当前版本: <strong id="smart-media-current-version-text">检查中...</strong></span>
-              <button id="smart-media-update-button" class="menu_button" style="padding: 5px 15px; font-size: 12px;">
-                检查更新
-              </button>
-            </div>
-            <div class="setting-description">自动检查GitHub上的最新版本并支持一键更新</div>
           </div>
         </div>
       </details>
@@ -1047,9 +876,6 @@ function bindEventListeners() {
     pluginConfig.enableLogging = $(this).prop('checked');
     saveSettings();
   });
-
-  // 更新按钮点击事件
-  $(document).on('click', '#smart-media-update-button', onUpdateButtonClick);
 }
 
 /**
