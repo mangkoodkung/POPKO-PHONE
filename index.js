@@ -1,6 +1,5 @@
 /**
  * 智能媒体助手 - SillyTavern Extension
- * 统一的图片和文档处理插件
  * 作者: kencuo
  * 版本: 1.0.0
  */
@@ -847,8 +846,8 @@ function createSettingsHTML() {
       <details class="smart-media-collapsible" open>
         <summary class="smart-media-header">
           <span class="smart-media-icon">🎯</span>
-          <span class="smart-media-title">智能媒体助手</span>
-          <span class="smart-media-version" id="smart-media-current-version">v1.0.0</span>
+          <span class="smart-media-title">ctrl同层手机喵识图</span>
+          <span class="smart-media-version" id="smart-media-current-version">v1.1.0</span>
           <span class="smart-media-update-badge" id="smart-media-update-badge" style="display: none; background: #ff6b6b; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 5px;" title="有新版本可用">NEW</span>
           <span class="smart-media-collapse-indicator">▼</span>
         </summary>
