@@ -183,7 +183,7 @@ class FileValidator {
  * 图片处理器
  */
 class ImageProcessor {
-  static async processImage(file) {
+  static async processImage(file, options = {}) {
     if (!pluginConfig.enableImageProcessing) {
       throw new Error('图片处理功能已禁用');
     }
@@ -453,7 +453,7 @@ class FileProcessor {
         if (pluginConfig.enableLogging) {
           console.log('[File Processor] 使用图片处理器');
         }
-        return await ImageProcessor.processImage(file);
+        return await ImageProcessor.processImage(file, options);
       } else if (detection.isDocument) {
         if (pluginConfig.enableLogging) {
           console.log('[File Processor] 使用文档处理器');
@@ -482,7 +482,7 @@ window.__processFileByPlugin = async function (file, options = {}) {
  * 图片处理接口（支持单图片和多图片）
  */
 window.__uploadImageByPlugin = async function (file, options = {}) {
-  return await ImageProcessor.processImage(file);
+  return await ImageProcessor.processImage(file, options);
 };
 
 /**
@@ -899,4 +899,73 @@ $(document).ready(function () {
 });
 
 // 导出模块（如果需要）
+// Smart Media Assistant: minimal global bridge
+function sanitizeForSlash(text) {
+  if (!text) return '';
+  return String(text).replaceAll('|', '¦');
+}
+async function loadSlashCommandsModule() {
+  const candidates = [
+    '/scripts/slash-commands.js',
+    '../../scripts/slash-commands.js',
+    '../../../scripts/slash-commands.js',
+    '../../../../scripts/slash-commands.js',
+  ];
+  for (const p of candidates) {
+    try {
+      const mod = await import(p);
+      if (mod && typeof mod.executeSlashCommandsWithOptions === 'function') {
+        return mod;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+async function sendTextToSillyTavern(content) {
+  const cmd = `/send ${content} | /trigger`;
+  try {
+    const mod = await loadSlashCommandsModule();
+    if (mod && typeof mod.executeSlashCommandsWithOptions === 'function') {
+      await mod.executeSlashCommandsWithOptions(cmd, {
+        handleParserErrors: true,
+        handleExecutionErrors: true,
+        source: MODULE_NAME,
+      });
+      return true;
+    }
+  } catch (e) {}
+  try {
+    if (typeof window.triggerSlash === 'function') {
+      window.triggerSlash(cmd);
+      return true;
+    }
+  } catch (e) {}
+  console.warn('[Smart Media Assistant] 无法找到 slash-commands 或 triggerSlash，发送失败');
+  return false;
+}
+async function processTextBridge(text, options = {}) {
+  const name = options?.name || '文本';
+  const header = options?.prompt || `请阅读并总结以下文件 ${name} 的关键信息：`;
+  const safe = sanitizeForSlash(text);
+  const content = `${header}\n\n${safe}`;
+  if (pluginConfig.enableLogging) {
+    console.log('[Smart Media Assistant] 发送文档至酒馆以生成总结', { name, size: options?.size });
+  }
+  return await sendTextToSillyTavern(content);
+}
+function exposeGlobalBridge() {
+  try {
+    const target = (typeof window !== 'undefined' ? window : globalThis);
+    target.smartMediaAssistant = target.smartMediaAssistant || {};
+    if (typeof target.smartMediaAssistant.processText !== 'function') {
+      target.smartMediaAssistant.processText = (text, options) => processTextBridge(text, options);
+      if (pluginConfig.enableLogging) {
+        console.log('[Smart Media Assistant] 已暴露桥接: smartMediaAssistant.processText');
+      }
+    }
+  } catch (e) {
+    console.warn('[Smart Media Assistant] 暴露全局桥接失败', e);
+  }
+}
+try { exposeGlobalBridge(); } catch (e) {}
 export { DocumentProcessor, FileProcessor, FileTypeDetector, FileValidator, ImageProcessor };
