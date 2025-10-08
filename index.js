@@ -619,62 +619,21 @@ function createSettingsInterface() {
  * 添加插件样式
  */
 function addPluginStyles() {
-  // CSS文件已经通过manifest.json加载，这里只添加动态样式
+  // 适配 SillyTavern 统一外观：尽量复用内置样式，少量微调
   const styleId = 'smart-media-assistant-dynamic-styles';
   if (document.getElementById(styleId)) return;
 
   const style = document.createElement('style');
   style.id = styleId;
   style.textContent = `
-    /* 动态样式补充 */
-    .smart-media-assistant .setting-group {
-      margin-bottom: 15px;
-      padding: 12px;
-      border: 1px solid #444;
-      border-radius: 3px;
-      background: #333;
-    }
-
-    .smart-media-assistant .setting-group h4 {
-      margin: 0 0 10px 0;
-      color: #ccc;
-      font-size: 13px;
-      font-weight: normal;
-      border-bottom: 1px solid #444;
-      padding-bottom: 6px;
-    }
-
-    .smart-media-assistant label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      color: #bbb;
-      font-size: 12px;
-    }
-
-    .smart-media-assistant input[type="checkbox"] {
-      margin: 0;
-      accent-color: #666;
-    }
-
-    .smart-media-assistant input[type="range"] {
-      width: 100%;
-      margin: 4px 0;
-      accent-color: #666;
-    }
-
-    .smart-media-assistant .setting-description {
-      font-size: 10px;
-      color: #888;
-      margin-top: 3px;
-      margin-left: 20px;
-      line-height: 1.2;
-      font-style: italic;
-    }
+    /* 仅做轻微布局微调，避免“特立独行”的风格 */
+    #smart-media-assistant-settings .settings-title-text { font-weight: 600; }
+    #smart-media-assistant-settings .inline-drawer { margin-top: 6px; }
+    #smart-media-assistant-settings .box-container { align-items: center; }
+    #smart-media-assistant-settings .box-container .flex.flexFlowColumn { gap: 2px; }
+    #smart-media-assistant-settings .range-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    #smart-media-assistant-settings .range-row input[type="range"] { width: 100%; }
   `;
-
   document.head.appendChild(style);
 }
 
@@ -682,91 +641,105 @@ function addPluginStyles() {
  * 创建设置界面HTML
  */
 function createSettingsHTML() {
+  // 复用 SillyTavern/JS‑Slash‑Runner 的外观结构
   return `
-    <div class="smart-media-assistant">
-      <details class="smart-media-collapsible" open>
-        <summary class="smart-media-header">
-          <span class="smart-media-icon">🎯</span>
-          <span class="smart-media-title">ctrl同层手机喵识图</span>
-          <span class="smart-media-version">v1.1.0</span>
-          <span class="smart-media-collapse-indicator">▼</span>
-        </summary>
-        <div class="smart-media-content">
-          <div class="setting-group">
-            <h4>🔧 基础设置</h4>
-            <label>
-              <input type="checkbox" id="${MODULE_NAME}_enableImageProcessing" ${
-    pluginConfig.enableImageProcessing ? 'checked' : ''
-  }>
-              启用图片处理
-            </label>
-            <div class="setting-description">开启图片压缩、优化和AI识图功能</div>
+    <div id="smart-media-assistant" class="extension-root">
+      <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+          <b>智能媒体助手</b>
+          <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+          <div class="extension-content flex flexFlowColumn gap10px">
 
-            <label>
-              <input type="checkbox" id="${MODULE_NAME}_enableDocumentProcessing" ${
-    pluginConfig.enableDocumentProcessing ? 'checked' : ''
-  }>
-              启用文档处理
-            </label>
-            <div class="setting-description">开启txt、json等文档文件的处理功能</div>
-          </div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">启用图片处理</div>
+                <div class="settings-title-description">开启图片压缩、优化和 AI 识图</div>
+              </div>
+              <div class="toggle-switch">
+                <input type="checkbox" id="${MODULE_NAME}_enableImageProcessing" class="toggle-input" ${pluginConfig.enableImageProcessing ? 'checked' : ''} />
+                <label for="${MODULE_NAME}_enableImageProcessing" class="toggle-label"><span class="toggle-handle"></span></label>
+              </div>
+            </div>
 
-          <div class="setting-group">
-            <h4>🖼️ 图片设置</h4>
-            <label>
-              图片质量: <span id="${MODULE_NAME}_imageQualityValue">${pluginConfig.imageQuality}</span>%
-              <input type="range" id="${MODULE_NAME}_imageQuality" min="10" max="100" step="5" value="${
-    pluginConfig.imageQuality
-  }">
-            </label>
-            <div class="setting-description">图片压缩质量，数值越高质量越好但文件越大</div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">启用文档处理</div>
+                <div class="settings-title-description">支持 txt/json/md/csv 等文本</div>
+              </div>
+              <div class="toggle-switch">
+                <input type="checkbox" id="${MODULE_NAME}_enableDocumentProcessing" class="toggle-input" ${pluginConfig.enableDocumentProcessing ? 'checked' : ''} />
+                <label for="${MODULE_NAME}_enableDocumentProcessing" class="toggle-label"><span class="toggle-handle"></span></label>
+              </div>
+            </div>
 
-            <label>
-              图片最大尺寸: <span id="${MODULE_NAME}_maxImageDimensionValue">${pluginConfig.maxImageDimension}</span>px
-              <input type="range" id="${MODULE_NAME}_maxImageDimension" min="512" max="4096" step="128" value="${
-    pluginConfig.maxImageDimension
-  }">
-            </label>
-            <div class="setting-description">图片的最大宽度或高度（像素）</div>
-          </div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">启用 AI 文档阅读</div>
+                <div class="settings-title-description">上传后自动发送到对话并触发生成</div>
+              </div>
+              <div class="toggle-switch">
+                <input type="checkbox" id="${MODULE_NAME}_enableAIReading" class="toggle-input" ${pluginConfig.enableAIReading ? 'checked' : ''} />
+                <label for="${MODULE_NAME}_enableAIReading" class="toggle-label"><span class="toggle-handle"></span></label>
+              </div>
+            </div>
 
-          <div class="setting-group">
-            <h4>📄 文档设置</h4>
-            <label>
-              <input type="checkbox" id="${MODULE_NAME}_enableAIReading" ${
-    pluginConfig.enableAIReading ? 'checked' : ''
-  }>
-              启用AI文档阅读
-            </label>
-            <div class="setting-description">自动使用AI分析上传的文档内容</div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">图片质量 <span id="${MODULE_NAME}_imageQualityValue">${pluginConfig.imageQuality}</span>%</div>
+                <div class="range-row">
+                  <input type="range" id="${MODULE_NAME}_imageQuality" min="10" max="100" step="5" value="${pluginConfig.imageQuality}">
+                </div>
+                <div class="settings-title-description">数值越高质量越好但文件越大</div>
+              </div>
+            </div>
 
-            <label>
-              文件大小限制: <span id="${MODULE_NAME}_maxFileSizeValue">${pluginConfig.maxFileSize}</span>MB
-              <input type="range" id="${MODULE_NAME}_maxFileSize" min="1" max="100" step="1" value="${
-    pluginConfig.maxFileSize
-  }">
-            </label>
-            <div class="setting-description">允许处理的最大文件大小</div>
-          </div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">图片最大尺寸 <span id="${MODULE_NAME}_maxImageDimensionValue">${pluginConfig.maxImageDimension}</span>px</div>
+                <div class="range-row">
+                  <input type="range" id="${MODULE_NAME}_maxImageDimension" min="512" max="4096" step="128" value="${pluginConfig.maxImageDimension}">
+                </div>
+                <div class="settings-title-description">图片的最大宽度或高度（像素）</div>
+              </div>
+            </div>
 
-          <div class="setting-group">
-            <h4>⚙️ 高级设置</h4>
-            <label>
-              <input type="checkbox" id="${MODULE_NAME}_showProcessingInfo" ${
-    pluginConfig.showProcessingInfo ? 'checked' : ''
-  }>
-              显示处理信息
-            </label>
-            <div class="setting-description">显示文件处理的详细信息和进度</div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">文件大小限制 <span id="${MODULE_NAME}_maxFileSizeValue">${pluginConfig.maxFileSize}</span>MB</div>
+                <div class="range-row">
+                  <input type="range" id="${MODULE_NAME}_maxFileSize" min="1" max="100" step="1" value="${pluginConfig.maxFileSize}">
+                </div>
+                <div class="settings-title-description">允许处理的最大文件大小</div>
+              </div>
+            </div>
 
-            <label>
-              <input type="checkbox" id="${MODULE_NAME}_enableLogging" ${pluginConfig.enableLogging ? 'checked' : ''}>
-              启用调试日志
-            </label>
-            <div class="setting-description">在控制台输出详细的调试信息</div>
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">显示处理信息</div>
+                <div class="settings-title-description">显示文件处理进度与提示</div>
+              </div>
+              <div class="toggle-switch">
+                <input type="checkbox" id="${MODULE_NAME}_showProcessingInfo" class="toggle-input" ${pluginConfig.showProcessingInfo ? 'checked' : ''} />
+                <label for="${MODULE_NAME}_showProcessingInfo" class="toggle-label"><span class="toggle-handle"></span></label>
+              </div>
+            </div>
+
+            <div class="extension-content-item box-container">
+              <div class="flex flexFlowColumn">
+                <div class="settings-title-text">调试日志</div>
+                <div class="settings-title-description">在控制台输出更多信息</div>
+              </div>
+              <div class="toggle-switch">
+                <input type="checkbox" id="${MODULE_NAME}_enableLogging" class="toggle-input" ${pluginConfig.enableLogging ? 'checked' : ''} />
+                <label for="${MODULE_NAME}_enableLogging" class="toggle-label"><span class="toggle-handle"></span></label>
+              </div>
+            </div>
+
           </div>
         </div>
-      </details>
+      </div>
     </div>
   `;
 }
@@ -777,53 +750,34 @@ function createSettingsHTML() {
 function bindCollapsibleEvents() {
   const STORAGE_KEY = 'smart-media-assistant-collapsed';
 
-  // 保存收缩状态
-  const saveCollapsedState = isOpen => {
-    localStorage.setItem(STORAGE_KEY, !isOpen);
-  };
+  const $root = $('#smart-media-assistant-settings .inline-drawer');
+  const $toggle = $root.find('.inline-drawer-toggle');
+  const $content = $root.find('.inline-drawer-content');
+  const $icon = $root.find('.inline-drawer-icon');
 
-  // 加载收缩状态
-  const loadCollapsedState = () => {
-    const collapsed = localStorage.getItem(STORAGE_KEY);
-    return collapsed === 'true';
-  };
-
-  // 应用保存的收缩状态
-  const details = $('.smart-media-collapsible')[0];
-  if (details && loadCollapsedState()) {
-    details.removeAttribute('open');
+  function setCollapsed(collapsed) {
+    if (collapsed) {
+      $content.hide();
+      $icon.removeClass('down').addClass('right');
+    } else {
+      $content.show();
+      $icon.removeClass('right').addClass('down');
+    }
+    localStorage.setItem(STORAGE_KEY, collapsed ? 'true' : 'false');
   }
 
-  // 监听收缩状态变化
-  $('.smart-media-collapsible').on('toggle', function () {
-    const isOpen = this.hasAttribute('open');
-    saveCollapsedState(isOpen);
+  // 初始状态
+  const collapsed = localStorage.getItem(STORAGE_KEY) === 'true';
+  setCollapsed(collapsed);
 
-    // 添加动画效果
-    const indicator = $(this).find('.smart-media-collapse-indicator');
-    if (isOpen) {
-      indicator.css('transform', 'rotate(180deg)');
-    } else {
-      indicator.css('transform', 'rotate(0deg)');
-    }
-
+  // 点击切换
+  $toggle.off('click.sma').on('click.sma', function () {
+    const nowCollapsed = $content.is(':visible');
+    setCollapsed(nowCollapsed);
     if (pluginConfig.enableLogging) {
-      console.log(`[Smart Media Assistant] 设置面板${isOpen ? '展开' : '收缩'}`);
+      console.log(`[Smart Media Assistant] 设置面板${nowCollapsed ? '收缩' : '展开'}`);
     }
   });
-
-  // 添加点击动画效果
-  $('.smart-media-header')
-    .on('mousedown', function () {
-      $(this).css('transform', 'translateY(0px)');
-    })
-    .on('mouseup mouseleave', function () {
-      $(this).css('transform', 'translateY(-1px)');
-    });
-
-  if (pluginConfig.enableLogging) {
-    console.log('[Smart Media Assistant] 收缩栏功能已启用');
-  }
 }
 
 /**
