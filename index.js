@@ -1,8 +1,7 @@
 /**
  * 智能媒体助手 - SillyTavern Extension
  * 统一的图片和文档处理插件
- * 作者: kencuo
- * 版本: 1.0.0
+ * 作者: ctrl
  */
 
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -646,7 +645,7 @@ function createSettingsHTML() {
     <div id="smart-media-assistant" class="extension-root">
       <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-          <b>智能媒体助手</b>
+          <b>识图插件 byctrl</b>
           <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
@@ -755,6 +754,9 @@ function bindCollapsibleEvents() {
   const $content = $root.find('.inline-drawer-content');
   const $icon = $root.find('.inline-drawer-icon');
 
+  // 防抖：避免同一次点击在冒泡阶段被其它全局处理器再次触发而立刻收起
+  let toggleLock = false;
+
   function setCollapsed(collapsed) {
     if (collapsed) {
       $content.hide();
@@ -770,14 +772,26 @@ function bindCollapsibleEvents() {
   const collapsed = localStorage.getItem(STORAGE_KEY) === 'true';
   setCollapsed(collapsed);
 
-  // 点击切换
-  $toggle.off('click.sma').on('click.sma', function () {
-    const nowCollapsed = $content.is(':visible');
-    setCollapsed(nowCollapsed);
-    if (pluginConfig.enableLogging) {
-      console.log(`[Smart Media Assistant] 设置面板${nowCollapsed ? '收缩' : '展开'}`);
-    }
-  });
+  // 点击切换（使用 mousedown 并阻止冒泡，避免被外部“点击外部关闭”逻辑立即折叠）
+  $toggle.off('.sma')
+    .on('mousedown.sma', function (e) {
+      // 阻止事件继续冒泡到全局 click 监听，从而避免打开后被立即关闭
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+
+      if (toggleLock) return; // 防抖
+      toggleLock = true;
+
+      const willCollapse = $content.is(':visible');
+      setCollapsed(willCollapse);
+      if (pluginConfig.enableLogging) {
+        console.log(`[Smart Media Assistant] 设置面板${willCollapse ? '收缩' : '展开'}`);
+      }
+
+      // 短暂解锁，避免同一次点击流程里的其它监听再次触发
+      setTimeout(() => (toggleLock = false), 200);
+    });
 }
 
 /**
