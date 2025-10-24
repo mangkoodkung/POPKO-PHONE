@@ -1,7 +1,8 @@
 /**
  * 智能媒体助手 - SillyTavern Extension
  * 统一的图片和文档处理插件
- * 作者: ctrl
+ * 作者: kencuo
+ * 版本: 1.0.0
  */
 
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -753,6 +754,9 @@ function bindCollapsibleEvents() {
   const $toggle = $root.find('.inline-drawer-toggle');
   const $content = $root.find('.inline-drawer-content');
   const $icon = $root.find('.inline-drawer-icon');
+  if ($root.length === 0 || $toggle.length === 0) {
+    return;
+  }
 
   // 防抖：避免同一次点击在冒泡阶段被其它全局处理器再次触发而立刻收起
   let toggleLock = false;
@@ -765,6 +769,7 @@ function bindCollapsibleEvents() {
       $content.show();
       $icon.removeClass('right').addClass('down');
     }
+    $toggle.attr('aria-expanded', (!collapsed).toString());
     localStorage.setItem(STORAGE_KEY, collapsed ? 'true' : 'false');
   }
 
@@ -774,6 +779,8 @@ function bindCollapsibleEvents() {
 
   // 点击切换（使用 mousedown 并阻止冒泡，避免被外部“点击外部关闭”逻辑立即折叠）
   $toggle.off('.sma')
+    .attr('role', 'button')
+    .attr('tabindex', '0')
     .on('mousedown.sma', function (e) {
       // 阻止事件继续冒泡到全局 click 监听，从而避免打开后被立即关闭
       e.preventDefault();
@@ -791,6 +798,18 @@ function bindCollapsibleEvents() {
 
       // 短暂解锁，避免同一次点击流程里的其它监听再次触发
       setTimeout(() => (toggleLock = false), 200);
+    })
+    .on('click.sma', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    })
+    .on('keydown.sma', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      $(this).trigger('mousedown');
     });
 }
 
