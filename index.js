@@ -607,7 +607,7 @@ function createSettingsHTML() {
     <div id="smart-media-assistant" class="extension-root">
       <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-          <b>📸 ผู้ช่วยสื่ออัจฉริยะ (Smart Media Assistant)</b>
+          <b>🌈POPKO-PHONE🌈</b>
           <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
