@@ -603,12 +603,11 @@ function addPluginStyles() {
  * 创建设置界面HTML
  */
 function createSettingsHTML() {
-  // 复用 SillyTavern/JS‑Slash‑Runner 的外观结构
   return `
     <div id="smart-media-assistant" class="extension-root">
       <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-          <b>识图插件 byctrl</b>
+          <b>📸 ผู้ช่วยสื่ออัจฉริยะ (Smart Media Assistant)</b>
           <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
@@ -627,8 +626,8 @@ function createSettingsHTML() {
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">启用文档处理</div>
-                <div class="settings-title-description">支持 txt/json/md/csv 等文本</div>
+                <div class="settings-title-text">เปิดการประมวลผลเอกสาร</div>
+                <div class="settings-title-description">รองรับ txt, json, md, csv และไฟล์ข้อความอื่น ๆ</div>
               </div>
               <div class="toggle-switch">
                 <input type="checkbox" id="${MODULE_NAME}_enableDocumentProcessing" class="toggle-input" ${pluginConfig.enableDocumentProcessing ? 'checked' : ''} />
@@ -638,8 +637,8 @@ function createSettingsHTML() {
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">启用 AI 文档阅读</div>
-                <div class="settings-title-description">上传后自动发送到对话并触发生成</div>
+                <div class="settings-title-text">เปิดการอ่านเอกสารด้วย AI</div>
+                <div class="settings-title-description">เมื่ออัปโหลดแล้วจะส่งเนื้อหาเข้าสู่การสนทนาอัตโนมัติ</div>
               </div>
               <div class="toggle-switch">
                 <input type="checkbox" id="${MODULE_NAME}_enableAIReading" class="toggle-input" ${pluginConfig.enableAIReading ? 'checked' : ''} />
@@ -649,38 +648,38 @@ function createSettingsHTML() {
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">图片质量 <span id="${MODULE_NAME}_imageQualityValue">${pluginConfig.imageQuality}</span>%</div>
+                <div class="settings-title-text">คุณภาพของภาพ <span id="${MODULE_NAME}_imageQualityValue">${pluginConfig.imageQuality}</span>%</div>
                 <div class="range-row">
                   <input type="range" id="${MODULE_NAME}_imageQuality" min="10" max="100" step="5" value="${pluginConfig.imageQuality}">
                 </div>
-                <div class="settings-title-description">数值越高质量越好但文件越大</div>
+                <div class="settings-title-description">ค่าคุณภาพยิ่งสูง ภาพยิ่งชัด แต่ไฟล์จะใหญ่ขึ้น</div>
               </div>
             </div>
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">图片最大尺寸 <span id="${MODULE_NAME}_maxImageDimensionValue">${pluginConfig.maxImageDimension}</span>px</div>
+                <div class="settings-title-text">ขนาดสูงสุดของภาพ <span id="${MODULE_NAME}_maxImageDimensionValue">${pluginConfig.maxImageDimension}</span> px</div>
                 <div class="range-row">
                   <input type="range" id="${MODULE_NAME}_maxImageDimension" min="512" max="4096" step="128" value="${pluginConfig.maxImageDimension}">
                 </div>
-                <div class="settings-title-description">图片的最大宽度或高度（像素）</div>
+                <div class="settings-title-description">จำกัดความกว้างหรือความสูงสูงสุดของภาพ (พิกเซล)</div>
               </div>
             </div>
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">文件大小限制 <span id="${MODULE_NAME}_maxFileSizeValue">${pluginConfig.maxFileSize}</span>MB</div>
+                <div class="settings-title-text">จำกัดขนาดไฟล์ <span id="${MODULE_NAME}_maxFileSizeValue">${pluginConfig.maxFileSize}</span> MB</div>
                 <div class="range-row">
                   <input type="range" id="${MODULE_NAME}_maxFileSize" min="1" max="100" step="1" value="${pluginConfig.maxFileSize}">
                 </div>
-                <div class="settings-title-description">允许处理的最大文件大小</div>
+                <div class="settings-title-description">ขนาดไฟล์สูงสุดที่อนุญาตให้ประมวลผลได้</div>
               </div>
             </div>
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">显示处理信息</div>
-                <div class="settings-title-description">显示文件处理进度与提示</div>
+                <div class="settings-title-text">แสดงข้อมูลการประมวลผล</div>
+                <div class="settings-title-description">แสดงความคืบหน้าและข้อความสถานะขณะประมวลผลไฟล์</div>
               </div>
               <div class="toggle-switch">
                 <input type="checkbox" id="${MODULE_NAME}_showProcessingInfo" class="toggle-input" ${pluginConfig.showProcessingInfo ? 'checked' : ''} />
@@ -691,7 +690,7 @@ function createSettingsHTML() {
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
                <div class="settings-title-text">เปิดโหมดบันทึกดีบัก</div>
-               <div class="settings-title-description">แสดงข้อมูลเพิ่มเติมใน Console</div>
+               <div class="settings-title-description">แสดงข้อมูลเพิ่มเติมใน Console เพื่อการตรวจสอบ</div>
               </div>
               <div class="toggle-switch">
                 <input type="checkbox" id="${MODULE_NAME}_enableLogging" class="toggle-input" ${pluginConfig.enableLogging ? 'checked' : ''} />
