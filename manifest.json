@@ -2,7 +2,6 @@
   "display_name": "🌈POPKO-PHONE🌈",
   "loading_order": 50,
   "entry": "POPKO-PHONE.html",
-  // 🧩 หน้านี้คือไฟล์หลักที่ extension จะเปิด (ชื่อเดียวกับ HTML ของคุณ)
   "requires": [],
   "optional": [],
   "js": "index.js",
