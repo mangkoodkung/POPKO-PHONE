@@ -1,19 +1,17 @@
 /**
- * 智能媒体助手 - SillyTavern Extension
- * 统一的图片和文档处理插件
- * 作者: kencuo
- * 版本: 1.0.0
+ * ผู้ช่วยสื่ออัจฉริยะ - SillyTavern Extension
+ * ปลั๊กอินประมวลผลภาพและเอกสารแบบรวมศูนย์
+ * ผู้เขียน: POPKO (อิงจาก kencuo)
+ * เวอร์ชัน: 1.0.0 (TH Edition)
  */
 
 import { saveSettingsDebounced } from '../../../../script.js';
 import { getContext } from '../../../extensions.js';
 import { getStringHash, saveBase64AsFile } from '../../../utils.js';
 
-// 插件配置
 const PLUGIN_ID = 'smart-media-assistant';
 const MODULE_NAME = 'smart-media-assistant';
 
-// 默认配置
 const DEFAULT_CONFIG = {
   enableImageProcessing: true,
   enableDocumentProcessing: true,
@@ -24,7 +22,6 @@ const DEFAULT_CONFIG = {
   showProcessingInfo: false,
   enableLogging: false,
 
-  // 内部配置
   supportedImageTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'],
   supportedImageExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'],
   supportedDocumentTypes: [
@@ -59,29 +56,21 @@ const DEFAULT_CONFIG = {
   ],
 };
 
-// 全局配置管理
 let pluginConfig = {};
 
-/**
- * 初始化插件配置
- */
 function initConfig() {
   const context = getContext();
   const extensionSettings = context.extensionSettings[MODULE_NAME] || {};
-
-  // 合并默认配置和用户配置
   pluginConfig = { ...DEFAULT_CONFIG, ...extensionSettings };
-
-  // 保存到全局设置
   context.extensionSettings[MODULE_NAME] = pluginConfig;
 
   if (pluginConfig.enableLogging) {
-    console.log('[Smart Media Assistant] 配置初始化完成:', pluginConfig);
+    console.log('[Smart Media Assistant] การตั้งค่าถูกโหลดเรียบร้อย:', pluginConfig);
   }
 }
 
 /**
- * 文件类型检测器
+ * ตัวตรวจจับประเภทไฟล์
  */
 class FileTypeDetector {
   static detectFileType(file) {
@@ -93,12 +82,10 @@ class FileTypeDetector {
     const fileName = file.name || '';
     const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
 
-    // 检测图片
     const isImageByType = pluginConfig.supportedImageTypes.includes(fileType) || fileType.startsWith('image/');
     const isImageByExt = pluginConfig.supportedImageExtensions.includes(fileExtension);
     const isImage = isImageByType || (fileType.startsWith('image/') && isImageByExt);
 
-    // 检测文档
     const isDocumentByType =
       pluginConfig.supportedDocumentTypes.includes(fileType) ||
       fileType.startsWith('text/') ||
@@ -107,7 +94,6 @@ class FileTypeDetector {
     const isDocumentByExt = pluginConfig.supportedDocumentExtensions.includes(fileExtension);
     const isDocument = isDocumentByType || isDocumentByExt;
 
-    // 排除冲突：如果同时匹配，优先按扩展名判断
     let finalType = 'unknown';
     let finalIsImage = false;
     let finalIsDocument = false;
@@ -119,7 +105,6 @@ class FileTypeDetector {
       finalType = 'document';
       finalIsDocument = true;
     } else if (isImage && isDocument) {
-      // 冲突解决：优先按扩展名
       if (pluginConfig.supportedImageExtensions.includes(fileExtension)) {
         finalType = 'image';
         finalIsImage = true;
@@ -140,7 +125,7 @@ class FileTypeDetector {
     };
 
     if (pluginConfig.enableLogging) {
-      console.log('[File Type Detector] 检测结果:', result);
+      console.log('[ตัวตรวจจับไฟล์] ผลการตรวจ:', result);
     }
 
     return result;
@@ -148,31 +133,31 @@ class FileTypeDetector {
 }
 
 /**
- * 文件验证器
+ * ตัวตรวจสอบไฟล์
  */
 class FileValidator {
   static validate(file, expectedType = null) {
     if (!file || typeof file !== 'object') {
-      throw new Error('无效的文件对象');
+      throw new Error('ไฟล์ไม่ถูกต้อง');
     }
 
     const maxBytes = pluginConfig.maxFileSize * 1024 * 1024;
     if (file.size > maxBytes) {
-      throw new Error(`文件过大，限制: ${pluginConfig.maxFileSize}MB`);
+      throw new Error(`ไฟล์มีขนาดใหญ่เกินไป (จำกัดที่ ${pluginConfig.maxFileSize}MB)`);
     }
 
     const detection = FileTypeDetector.detectFileType(file);
 
     if (expectedType === 'image' && !detection.isImage) {
-      throw new Error(`不支持的图片格式: ${detection.fileType || '未知'} (${file.name})`);
+      throw new Error(`ไม่รองรับประเภทภาพนี้: ${detection.fileType || 'ไม่ทราบ'} (${file.name})`);
     }
 
     if (expectedType === 'document' && !detection.isDocument) {
-      throw new Error(`不支持的文档格式: ${detection.fileType || '未知'} (${file.name})`);
+      throw new Error(`ไม่รองรับประเภทเอกสารนี้: ${detection.fileType || 'ไม่ทราบ'} (${file.name})`);
     }
 
     if (!expectedType && detection.type === 'unknown') {
-      throw new Error(`不支持的文件类型: ${detection.fileType || '未知'} (${file.name})`);
+      throw new Error(`ไม่รองรับไฟล์ประเภทนี้: ${detection.fileType || 'ไม่ทราบ'} (${file.name})`);
     }
 
     return detection;
@@ -180,22 +165,21 @@ class FileValidator {
 }
 
 /**
- * 图片处理器
+ * ตัวจัดการภาพ
  */
 class ImageProcessor {
   static async processImage(file, options = {}) {
     if (!pluginConfig.enableImageProcessing) {
-      throw new Error('图片处理功能已禁用');
+      throw new Error('ฟังก์ชันประมวลผลภาพถูกปิดอยู่');
     }
 
     const validation = FileValidator.validate(file, 'image');
 
     if (pluginConfig.showProcessingInfo) {
-      toastr.info('正在处理图片...', '图片上传');
+      toastr.info('กำลังประมวลผลภาพ...', 'อัปโหลดภาพ');
     }
 
     try {
-      // 创建图片元素
       const img = new Image();
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -203,7 +187,6 @@ class ImageProcessor {
       return new Promise((resolve, reject) => {
         img.onload = async () => {
           try {
-            // 计算新尺寸
             let { width, height } = img;
             const maxDim = pluginConfig.maxImageDimension;
 
@@ -217,18 +200,13 @@ class ImageProcessor {
               }
             }
 
-            // 设置画布尺寸
             canvas.width = width;
             canvas.height = height;
-
-            // 绘制图片
             ctx.drawImage(img, 0, 0, width, height);
 
-            // 转换为base64
             const quality = pluginConfig.imageQuality / 100;
             const imageData = canvas.toDataURL('image/jpeg', quality);
 
-            // 保存文件
             const base64Content = imageData.split(',')[1];
             const fileExtension = 'jpg';
             const uniqueId = `${Date.now()}_${getStringHash(file.name)}`;
@@ -251,7 +229,7 @@ class ImageProcessor {
             };
 
             if (pluginConfig.showProcessingInfo) {
-              toastr.success('图片处理完成', '图片上传');
+              toastr.success('ประมวลผลภาพเสร็จสิ้น', 'อัปโหลดภาพ');
             }
 
             resolve(result);
@@ -260,12 +238,12 @@ class ImageProcessor {
           }
         };
 
-        img.onerror = () => reject(new Error('图片加载失败'));
+        img.onerror = () => reject(new Error('ไม่สามารถโหลดภาพได้'));
         img.src = URL.createObjectURL(file);
       });
     } catch (error) {
       if (pluginConfig.showProcessingInfo) {
-        toastr.error(`图片处理失败: ${error.message}`, '图片上传');
+        toastr.error(`ประมวลผลภาพล้มเหลว: ${error.message}`, 'อัปโหลดภาพ');
       }
       throw error;
     }
@@ -273,25 +251,22 @@ class ImageProcessor {
 }
 
 /**
- * 文档处理器
+ * ตัวจัดการเอกสาร
  */
 class DocumentProcessor {
   static async processDocument(file, options = {}) {
     if (!pluginConfig.enableDocumentProcessing) {
-      throw new Error('文档处理功能已禁用');
+      throw new Error('ฟังก์ชันประมวลผลเอกสารถูกปิดอยู่');
     }
 
     const validation = FileValidator.validate(file, 'document');
 
     if (pluginConfig.showProcessingInfo) {
-      toastr.info('正在处理文档...', '文档上传');
+      toastr.info('กำลังประมวลผลเอกสาร...', 'อัปโหลดเอกสาร');
     }
 
     try {
-      // 读取文档内容
       const content = await DocumentProcessor.readFileContent(file, validation);
-
-      // 处理内容
       const processedContent = DocumentProcessor.processContent(content, validation.fileExtension);
 
       const result = {
@@ -307,25 +282,24 @@ class DocumentProcessor {
         },
       };
 
-      // 如果启用AI阅读且需要发送到聊天
       if (pluginConfig.enableAIReading && options.sendToChat !== false) {
         await DocumentProcessor.sendToChat(processedContent, file.name, validation.fileExtension);
       }
 
       if (pluginConfig.showProcessingInfo) {
-        toastr.success('文档处理完成', '文档上传');
+        toastr.success('ประมวลผลเอกสารเสร็จสิ้น', 'อัปโหลดเอกสาร');
       }
 
       return result;
     } catch (error) {
       if (pluginConfig.showProcessingInfo) {
-        toastr.error(`文档处理失败: ${error.message}`, '文档上传');
+        toastr.error(`เกิดข้อผิดพลาด: ${error.message}`, 'อัปโหลดเอกสาร');
       }
       throw error;
     }
   }
 
-  static readFileContent(file, validation) {
+  static readFileContent(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
@@ -333,11 +307,11 @@ class DocumentProcessor {
         try {
           resolve(e.target.result);
         } catch (error) {
-          reject(new Error(`文件读取失败: ${error.message}`));
+          reject(new Error(`ไม่สามารถอ่านไฟล์ได้: ${error.message}`));
         }
       };
 
-      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.onerror = () => reject(new Error('ไม่สามารถอ่านไฟล์ได้'));
       reader.readAsText(file, 'UTF-8');
     });
   }
@@ -348,21 +322,18 @@ class DocumentProcessor {
         try {
           const jsonObj = JSON.parse(content);
           return JSON.stringify(jsonObj, null, 2);
-        } catch (error) {
-          console.warn('[Document Processor] JSON格式化失败，返回原始内容');
+        } catch {
+          console.warn('[Document Processor] แปลง JSON ไม่สำเร็จ คืนค่าเนื้อหาเดิม');
           return content;
         }
-
       case 'csv':
-        // CSV预览处理
         const lines = content.split('\n');
         const maxPreviewLines = 50;
         if (lines.length > maxPreviewLines) {
           const previewLines = lines.slice(0, maxPreviewLines);
-          return previewLines.join('\n') + `\n\n... (文件共${lines.length}行，仅显示前${maxPreviewLines}行)`;
+          return previewLines.join('\n') + `\n\n... (ไฟล์มี ${lines.length} บรรทัด แสดงเฉพาะ ${maxPreviewLines})`;
         }
         return content;
-
       default:
         return content;
     }
@@ -370,24 +341,15 @@ class DocumentProcessor {
 
   static async sendToChat(content, fileName, documentType) {
     try {
-      // 获取SillyTavern的聊天函数
       const addOneMessage =
-        typeof window.addOneMessage === 'function'
-          ? window.addOneMessage
-          : typeof parent.addOneMessage === 'function'
-          ? parent.addOneMessage
-          : typeof top.addOneMessage === 'function'
-          ? top.addOneMessage
-          : null;
+        window.addOneMessage || parent.addOneMessage || top.addOneMessage || null;
 
       if (addOneMessage) {
-        // 限制显示长度
         const maxLength = 2000;
         const displayContent =
-          content.length > maxLength ? content.substring(0, maxLength) + '\n\n...(内容已截断)' : content;
+          content.length > maxLength ? content.substring(0, maxLength) + '\n\n...(ตัดเนื้อหาบางส่วน)' : content;
 
-        // 文档类型图标
-        const typeIcons = {
+        const icons = {
           json: '📋',
           md: '📝',
           html: '🌐',
@@ -400,32 +362,32 @@ class DocumentProcessor {
           log: '📜',
         };
 
-        const icon = typeIcons[documentType] || '📄';
-        const messageContent = `${icon} **文档内容** (${fileName})\n\n\`\`\`${documentType}\n${displayContent}\n\`\`\``;
+        const icon = icons[documentType] || '📄';
+        const message = `${icon} **เนื้อหาเอกสาร** (${fileName})\n\n\`\`\`${documentType}\n${displayContent}\n\`\`\``;
 
         await addOneMessage({
           name: 'User',
           is_user: true,
-          is_system: false,
-          send_date: new Date().toISOString(),
-          mes: messageContent,
+          mes: message,
           extra: {
             type: 'document_upload',
             file_name: fileName,
             document_type: documentType,
-            processed_by: 'smart_media_assistant',
           },
         });
 
         if (pluginConfig.enableLogging) {
-          console.log('[Document Processor] 文档已发送到聊天');
+          console.log('[Document Processor] ส่งเอกสารไปยังแชทเรียบร้อย');
         }
       }
     } catch (error) {
-      console.error('[Document Processor] 发送文档失败:', error);
+      console.error('[Document Processor] ส่งเอกสารล้มเหลว:', error);
     }
   }
 }
+
+/* === ส่วนที่เหลือ (initPlugin, UI, bindEvent, saveSettings) คงเดิมได้เลย === */
+
 
 /**
  * 主要的文件处理接口
