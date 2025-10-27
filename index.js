@@ -654,8 +654,8 @@ function createSettingsHTML() {
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">启用图片处理</div>
-                <div class="settings-title-description">开启图片压缩、优化和 AI 识图</div>
+                <div class="settings-title-text">เปิดการประมวลผลภาพ</div>
+                <div class="settings-title-description">เปิดใช้งานการบีบอัด ปรับแต่ง และจดจำภาพด้วย AI</div>
               </div>
               <div class="toggle-switch">
                 <input type="checkbox" id="${MODULE_NAME}_enableImageProcessing" class="toggle-input" ${pluginConfig.enableImageProcessing ? 'checked' : ''} />
@@ -728,8 +728,8 @@ function createSettingsHTML() {
 
             <div class="extension-content-item box-container">
               <div class="flex flexFlowColumn">
-                <div class="settings-title-text">调试日志</div>
-                <div class="settings-title-description">在控制台输出更多信息</div>
+               <div class="settings-title-text">เปิดโหมดบันทึกดีบัก</div>
+               <div class="settings-title-description">แสดงข้อมูลเพิ่มเติมใน Console</div>
               </div>
               <div class="toggle-switch">
                 <input type="checkbox" id="${MODULE_NAME}_enableLogging" class="toggle-input" ${pluginConfig.enableLogging ? 'checked' : ''} />
